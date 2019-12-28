@@ -1,0 +1,14 @@
+apply plugin: 'kotlin-android'
+apply plugin: 'kotlin-android-extensions'
+apply plugin: 'kotlin-kapt'
+
+kapt {
+    arguments {
+        arg("AROUTER_MODULE_NAME", project.getName())
+    }
+}
+
+dependencies {
+    implementation "com.alibaba:arouter-api:$arrouter_api_version"
+    kapt "com.alibaba:arouter-compiler:$arouter_compiler_version"
+}

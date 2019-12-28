@@ -1,0 +1,4 @@
+include ':app'
+// demo公共资源
+include ':app-common'
+
