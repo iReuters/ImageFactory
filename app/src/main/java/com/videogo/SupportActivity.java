@@ -49,7 +49,7 @@ public class SupportActivity extends RootActivity {
         mApiUrlTv = findViewById(R.id.edit_apiurl);
         mWebUrlTv =  findViewById(R.id.edit_weburl);
         TextView mEnsureTv = findViewById(R.id.ok_tv);
-        mDeviceSerialTv = findViewById(R.id.edit_deviceserial);
+        mDeviceSerialTv = findViewById(R.id.edit_deviceserial);   啦啦啦啦啦
         mEnsureTv.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
