@@ -74,6 +74,8 @@ import android.widget.Toast;
 import com.arcsoft.arcfacedemo.common.Constants;
 import com.arcsoft.face.FaceEngine;
 import com.arcsoft.face.FaceInfo;
+import com.arcsoft.face.enums.DetectFaceOrientPriority;
+import com.arcsoft.face.enums.DetectMode;
 import com.arcsoft.imageutil.ArcSoftImageFormat;
 import com.arcsoft.imageutil.ArcSoftImageUtil;
 import com.arcsoft.imageutil.ArcSoftImageUtilError;
@@ -332,7 +334,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
     private MyThread thrd;
     private MyThread facedetect;
 
-    private FaceEngine faceEngine;
+    private FaceEngine faceEngine = new FaceEngine();
 
     private int mRealFlow = 0;
 
@@ -449,6 +451,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
         File[] files = file.listFiles();
         if (timer != null && facedetect != null){
             timer.cancel();
+            Log.d(TAG, "onDestroy: " + "停止截图");
             facedetect.exit = true;
         }
         for (File file1 : files) {
@@ -3531,6 +3534,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
 
     private void drawFaceRect(final ImageView faceRect, int dispWidth, int dispHeight) {
 
+        faceEngine.init(this, DetectMode.ASF_DETECT_MODE_IMAGE, DetectFaceOrientPriority.ASF_OP_0_ONLY, 32, 20, FaceEngine.ASF_FACE_DETECT);
 
         bitmap = Bitmap.createBitmap(dispWidth, dispHeight, Bitmap.Config.ARGB_8888);
 
@@ -3566,37 +3570,40 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
 
                         }
 
-                        /*Mat src = Imgcodecs.imread(file.getAbsolutePath());
-                        if (src.empty()) {
+                        if (file.length() == 0) {
                             try {
                                 Thread.sleep(100);
                             } catch (InterruptedException e) {
                                 e.printStackTrace();
                             }
+                            Log.d(TAG, "run: " + "文件大小为0");
                             continue;
-                        }*/
+                        }
+
+
 
 
                         Bitmap originalBitmap = BitmapFactory.decodeFile(file.getAbsolutePath());
                         Bitmap mBitmap = originalBitmap.copy(Bitmap.Config.ARGB_8888, true);
-                        Bitmap bitmap = ArcSoftImageUtil.getAlignedBitmap(originalBitmap, true);
-                        byte[] bgr24 = ArcSoftImageUtil.createImageData(bitmap.getWidth(), bitmap.getHeight(), ArcSoftImageFormat.BGR24);
-                        int transformCode = ArcSoftImageUtil.bitmapToImageData(bitmap, bgr24, ArcSoftImageFormat.BGR24);
+                        Bitmap alignedBitmap = ArcSoftImageUtil.getAlignedBitmap(originalBitmap, true);
+                        byte[] bgr24 = ArcSoftImageUtil.createImageData(alignedBitmap.getWidth(), alignedBitmap.getHeight(), ArcSoftImageFormat.BGR24);
+                        int transformCode = ArcSoftImageUtil.bitmapToImageData(alignedBitmap, bgr24, ArcSoftImageFormat.BGR24);
                         if (transformCode != ArcSoftImageUtilError.CODE_SUCCESS) {
                             Log.d(TAG, "onClick: " + transformCode);
                             return;
                         }
                         List<FaceInfo> faceInfoList = new ArrayList<>();
-                        int errCode = faceEngine.detectFaces(bgr24, bitmap.getWidth(), bitmap.getHeight(), FaceEngine.CP_PAF_BGR24, faceInfoList);
-                        Canvas canvas = new Canvas(mBitmap);
+                        int errCode = faceEngine.detectFaces(bgr24, alignedBitmap.getWidth(), alignedBitmap.getHeight(), FaceEngine.CP_PAF_BGR24, faceInfoList);
+                        Canvas canvas = new Canvas(bitmap);
                         Paint paint = new Paint();
                         paint.setColor(Color.RED);
-                        paint.setStrokeWidth(10);
+                        paint.setStrokeWidth(6);
                         paint.setStyle(Paint.Style.STROKE);
-                        if (code == com.arcsoft.face.ErrorInfo.MOK && faceInfoList.size() > 0) {
+                        if (errCode == com.arcsoft.face.ErrorInfo.MOK && faceInfoList.size() > 0) {
                             Log.d(TAG, "onClick: " + "detect success! " + faceInfoList.size());
                             for (FaceInfo face : faceInfoList) {
-                                canvas.drawRect(face.getRect(), paint);
+                                canvas.drawRect((float)face.getRect().left / 1920 * dispWidth, (float)face.getRect().top / 1080 * dispHeight,
+                                        (float)face.getRect().right / 1920 * dispWidth, (float)face.getRect().bottom / 1080 * dispHeight, paint);
                                 Log.d(TAG, "onClick: 矩形坐标 " + face.getRect().left + " " + face.getRect().top + " " + face.getRect().right + " " + face.getRect().bottom);
                             }
 
@@ -3608,7 +3615,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
-                                faceRect.setImageBitmap(mBitmap);
+                                faceRect.setImageBitmap(bitmap);
                             }
                         });
 
