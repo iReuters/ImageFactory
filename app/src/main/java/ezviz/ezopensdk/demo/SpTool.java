@@ -2,8 +2,9 @@ package ezviz.ezopensdk.demo;
 
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.support.annotation.NonNull;
 import android.util.Log;
+
+import androidx.annotation.NonNull;
 
 /**
  * 用于demo的SharedPreference工具类

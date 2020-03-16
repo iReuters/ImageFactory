@@ -1,3 +1,6 @@
+ext {
+    glideVersion = '3.6.0'
+}
 buildscript {
 
     //依赖版本统一管理
@@ -7,12 +10,12 @@ buildscript {
 
     repositories {
         google()
-        jcenter()
+        jcenter() {url 'https://maven.aliyun.com/repository/jcenter'}
         maven { url "http://maven.hikvision.com.cn/nexus/content/groups/public/" }
     }
 
     dependencies {
-        classpath 'com.android.tools.build:gradle:3.5.3'
+        classpath 'com.android.tools.build:gradle:3.6.1'
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
 }
@@ -20,7 +23,7 @@ buildscript {
 allprojects {
     repositories {
         google()
-        jcenter()
+        jcenter() {url 'https://maven.aliyun.com/repository/jcenter'}
         maven { url "http://maven.hikvision.com.cn/nexus/content/groups/public/" }
     }
 }

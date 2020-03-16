@@ -2,9 +2,11 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/EzvizSDK_demo_4.9.0.2.iml" filepath="$PROJECT_DIR$/EzvizSDK_demo_4.9.0.2.iml" />
-      <module fileurl="file://$PROJECT_DIR$/app/app.iml" filepath="$PROJECT_DIR$/app/app.iml" />
-      <module fileurl="file://$PROJECT_DIR$/app-common/app-common.iml" filepath="$PROJECT_DIR$/app-common/app-common.iml" />
+      <module fileurl="file://$PROJECT_DIR$/ArcSoft/ArcSoft.iml" filepath="$PROJECT_DIR$/ArcSoft/ArcSoft.iml" group="EzvizSDK_demo_4.9.0.2/ArcSoft" />
+      <module fileurl="file://$PROJECT_DIR$/EzvizSDK_demo_4.9.0.2.iml" filepath="$PROJECT_DIR$/EzvizSDK_demo_4.9.0.2.iml" group="EzvizSDK_demo_4.9.0.2" />
+      <module fileurl="file://$PROJECT_DIR$/OpenCV/OpenCV.iml" filepath="$PROJECT_DIR$/OpenCV/OpenCV.iml" group="EzvizSDK_demo_4.9.0.2/OpenCV" />
+      <module fileurl="file://$PROJECT_DIR$/app/app.iml" filepath="$PROJECT_DIR$/app/app.iml" group="EzvizSDK_demo_4.9.0.2/app" />
+      <module fileurl="file://$PROJECT_DIR$/app-common/app-common.iml" filepath="$PROJECT_DIR$/app-common/app-common.iml" group="EzvizSDK_demo_4.9.0.2/app-common" />
     </modules>
   </component>
 </project>

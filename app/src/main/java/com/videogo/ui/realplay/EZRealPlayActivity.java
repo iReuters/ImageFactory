@@ -24,18 +24,23 @@ import android.content.IntentFilter;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.drawable.AnimationDrawable;
 import android.graphics.drawable.BitmapDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Message;
 import android.os.SystemClock;
 import android.text.TextUtils;
 import android.util.DisplayMetrics;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
@@ -66,6 +71,12 @@ import android.widget.RelativeLayout.LayoutParams;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.arcsoft.arcfacedemo.common.Constants;
+import com.arcsoft.face.FaceEngine;
+import com.arcsoft.face.FaceInfo;
+import com.arcsoft.imageutil.ArcSoftImageFormat;
+import com.arcsoft.imageutil.ArcSoftImageUtil;
+import com.arcsoft.imageutil.ArcSoftImageUtilError;
 import com.videogo.EzvizApplication;
 import com.videogo.RootActivity;
 import com.videogo.constant.Config;
@@ -109,12 +120,25 @@ import com.videogo.widget.WaitDialog;
 import com.videogo.widget.loading.LoadingTextView;
 
 import org.MediaPlayer.PlayM4.Player;
+import org.opencv.android.OpenCVLoader;
+import org.opencv.core.CvException;
+import org.opencv.core.Mat;
+import org.opencv.core.MatOfRect;
+import org.opencv.core.Point;
+import org.opencv.core.Scalar;
+import org.opencv.core.Size;
+import org.opencv.imgcodecs.Imgcodecs;
+import org.opencv.imgproc.Imgproc;
+import org.opencv.objdetect.CascadeClassifier;
 
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.List;
 import java.util.Random;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -160,6 +184,8 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
     private LocalInfo mLocalInfo = null;
     private Handler mHandler = null;
 
+    private int dispWidth;
+    private int dispHeight;
     private float mRealRatio = Constant.LIVE_VIEW_RATIO;
     private int mStatus = RealPlayStatus.STATUS_INIT;
     private boolean mIsOnStop = false;
@@ -181,8 +207,10 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
     private RelativeLayout mRealPlayLoadingRl;
     private TextView mRealPlayTipTv;
     private ImageView mRealPlayPlayIv;
+    private ImageView faceRect;
     private LoadingTextView mRealPlayPlayLoading;
     private LinearLayout mRealPlayPlayPrivacyLy;
+    private CascadeClassifier faceDetector;
     private ImageView mPageAnimIv = null;
     private AnimationDrawable mPageAnimDrawable = null;
 
@@ -269,6 +297,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
     private CheckTextButton mFullscreenButton;
     private CheckTextButton mFullscreenFullButton;
     private ScreenOrientationHelper mScreenOrientationHelper;
+    private Button mFaceDetect;
 
     // 弱提示预览信息  Weak prompt preview information
     private long mStartTime = 0;
@@ -295,6 +324,15 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
     private String mVerifyCode;
 
     private long mStreamFlow = 0;
+    private Timer timer;
+
+    private Bitmap bitmap;
+    private int code = 1;
+    private String path = Environment.getExternalStorageDirectory().getAbsolutePath() + "/0_OpenSDK/Face_Detection";
+    private MyThread thrd;
+    private MyThread facedetect;
+
+    private FaceEngine faceEngine;
 
     private int mRealFlow = 0;
 
@@ -302,20 +340,37 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        if (Build.VERSION.SDK_INT >= 21) {
-            View decorView = getWindow().getDecorView();
-            decorView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
-            getWindow().setStatusBarColor(Color.TRANSPARENT);
-        }               initData();
-        initView();
+        iniLoadOpenCV();
+        activeEngine();
+        View decorView = getWindow().getDecorView();
+        decorView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+        getWindow().setStatusBarColor(Color.TRANSPARENT);
+
+        initData();
+
         // ATTENTION: This was auto-generated to implement the App Indexing API.
         // See https://g.co/AppIndexing/AndroidStudio for more information.
 //        client = new GoogleApiClient.Builder(this).addApi(AppIndex.API).build();
+            initView();
+            //initFaceDetector();
+
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        Log.d(TAG, "onPause: ");
+        if (timer != null && facedetect != null){
+            timer.cancel();
+            facedetect.exit = true;
+        }
+
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+
         if (mOrientation == Configuration.ORIENTATION_LANDSCAPE) {
             return;
         }
@@ -390,6 +445,19 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        File file = new File(path);
+        File[] files = file.listFiles();
+        if (timer != null && facedetect != null){
+            timer.cancel();
+            facedetect.exit = true;
+        }
+        for (File file1 : files) {
+            if (file1.isFile()) {
+                file1.delete();
+            }
+        }
+
+
         if (mEZPlayer != null) {
             mEZPlayer.release();
         }
@@ -596,10 +664,13 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
         initTitleBar();
         initRealPlayPageLy();
         initLoadingUI();
+        faceRect = findViewById(R.id.face_rect);
+        findViewById(R.id.face_detect).setOnClickListener(this);
         mRealPlayPlayRl = (RelativeLayout) findViewById(R.id.realplay_play_rl);
         mRealPlaySv = (SurfaceView) findViewById(R.id.realplay_sv);
         mRealPlaySh = mRealPlaySv.getHolder();
         mRealPlaySh.addCallback(this);
+
         mRealPlayTouchListener = new CustomTouchListener() {
             @Override
             public boolean canZoom(float scale) {
@@ -1249,6 +1320,18 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
     @Override
     public void onClick(View view) {
         switch (view.getId()) {
+            case R.id.face_detect:
+                Toast.makeText(this, "开始识别", Toast.LENGTH_SHORT).show();
+
+                try {
+                    screenShot();
+                    Thread.sleep(200);
+                    drawFaceRect(faceRect, dispWidth, dispHeight);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+
+                break;
             case R.id.realplay_play_btn:
             case R.id.realplay_full_play_btn:
             case R.id.realplay_play_iv:
@@ -1259,6 +1342,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
                     startRealPlay();
                 }
                 break;
+
             case R.id.realplay_previously_btn:
             case R.id.realplay_previously_btn2:
             case R.id.realplay_full_previously_btn:
@@ -2451,20 +2535,20 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
                 strDecodeType = "soft";
             }
             String streamTypeMsg = "decode type: " + strDecodeType;
-            TextView streamTypeTv = (TextView)findViewById(R.id.tv_decode_type);
+            TextView streamTypeTv = findViewById(R.id.tv_decode_type);
             if (streamTypeTv != null){
                 streamTypeTv.setText(streamTypeMsg);
-                streamTypeTv.setVisibility(View.VISIBLE);
+                streamTypeTv.setVisibility(View.GONE);
             }
         }
     }
 
     private void showStreamType(int streamType){
         String streamTypeMsg = getApplicationContext().getString(R.string.stream_type) + changeIntTypeToStringType(streamType);
-        TextView streamTypeTv = (TextView)findViewById(R.id.tv_stream_type);
+        TextView streamTypeTv = findViewById(R.id.tv_stream_type);
         if (streamTypeTv != null){
             streamTypeTv.setText(streamTypeMsg);
-            streamTypeTv.setVisibility(View.VISIBLE);
+            streamTypeTv.setVisibility(View.GONE);
         }
     }
 
@@ -3232,7 +3316,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
 
     private void showType() {
         if (Config.LOGGING && mEZPlayer != null) {
-            Utils.showLog(EZRealPlayActivity.this, "getType " + ",time：" + (mStopTime - mStartTime));
+            //Utils.showLog(EZRealPlayActivity.this, "getType " + ",time：" + (mStopTime - mStartTime));
         }
     }
 
@@ -3344,4 +3428,288 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
         }
     };
 
+    private void faceDetectCapture(final int code) {
+
+        mControlDisplaySec = 0;
+        if (!SDCardUtil.isSDCardUseable()) {
+            // 提示SD卡不可用
+            //Prompt SD card is not available
+            Utils.showToast(EZRealPlayActivity.this, R.string.remoteplayback_SDCard_disable_use);
+            return;
+        }
+
+        if (SDCardUtil.getSDCardRemainSize() < SDCardUtil.PIC_MIN_MEM_SPACE) {
+            // 提示内存不足
+            //Prompt for insufficient memory
+            Utils.showToast(EZRealPlayActivity.this, R.string.remoteplayback_capture_fail_for_memory);
+            return;
+        }
+
+        if (mEZPlayer != null) {
+            mCaptureDisplaySec = 4;
+            updateCaptureUI();
+
+            thrd = new MyThread() {
+                @Override
+                public void run() {
+
+                        Bitmap bmp = mEZPlayer.capturePicture();
+                        if (bmp != null) {
+                            try {
+
+                                String path = Environment.getExternalStorageDirectory().getAbsolutePath() + "/0_OpenSDK/Face_Detection";
+
+                                File file = new File(path);
+
+                                if (!file.exists()) {
+                                    file.mkdir();
+                                }
+
+                                final String strCaptureFile = path + "/" + code + ".jpg";
+                                //LogUtil.e(TAG, "captured picture file path is " + strCaptureFile);
+
+                                if (TextUtils.isEmpty(strCaptureFile)) {
+                                    bmp.recycle();
+                                    bmp = null;
+                                    return;
+                                }
+                                EZUtils.saveCapturePictrue(strCaptureFile, bmp);
+
+
+                                MediaScanner mMediaScanner = new MediaScanner(EZRealPlayActivity.this);
+                                mMediaScanner.scanFile(strCaptureFile, "jpg");
+                            /*runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    Toast.makeText(EZRealPlayActivity.this, getResources().getString(R.string.already_saved_to_volume)+strCaptureFile, Toast.LENGTH_SHORT).show();
+                                }
+                            });*/
+                            } catch (InnerException e) {
+                                e.printStackTrace();
+                            } finally {
+                                if (bmp != null) {
+                                    bmp.recycle();
+                                    bmp = null;
+                                    return;
+                                }
+                            }
+                        } else {
+                            return;
+                        }
+                        super.run();
+                    }
+
+            };
+            thrd.start();
+        }
+    }
+
+
+    private void iniLoadOpenCV(){
+        boolean success = OpenCVLoader.initDebug();
+        String CV_TAG = "OpenCV:";
+        if (success){
+            Log.i(CV_TAG,"OpenCV Libraries loaded...");
+            //Toast.makeText(this,"OpenCV initial success",Toast.LENGTH_SHORT).show();
+        }
+        else {
+            Toast.makeText(this,"WARNING: Could not load OpenCV libraries!",Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) {
+            dispWidth = faceRect.getWidth();
+            dispHeight = faceRect.getHeight();
+           Log.d(TAG, "onWindowFocusChanged: " + dispHeight + " " + dispWidth);
+            bitmap = Bitmap.createBitmap(dispWidth, dispHeight, Bitmap.Config.ARGB_8888);
+            faceRect.setImageBitmap(bitmap);
+        }
+    }
+
+    private void drawFaceRect(final ImageView faceRect, int dispWidth, int dispHeight) {
+
+
+        bitmap = Bitmap.createBitmap(dispWidth, dispHeight, Bitmap.Config.ARGB_8888);
+
+        final String path = Environment.getExternalStorageDirectory().getAbsolutePath() + "/0_OpenSDK/Face_Detection";
+        final File fileList = new File(path);
+
+        facedetect = new MyThread() {
+            @Override
+            public void run() {
+
+                    Log.d(TAG, "run: " + "开始" + code);
+                    int code = 1;
+                    File file = new File(path + "/" + code + ".jpg");
+                    Log.d(TAG, "run: " + file.getAbsolutePath() + file.exists() + fileList.list().length);
+                    while (!facedetect.exit) {
+                        bitmap = Bitmap.createBitmap(dispWidth, dispHeight, Bitmap.Config.ARGB_8888);
+
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                faceRect.setImageBitmap(bitmap);
+                            }
+                        });
+                        Log.d(TAG, "run: " + "进去循环" + code);
+                        if (!file.exists()) {
+                            if (code > 5) {
+                                code = 1;
+                            } else {
+                                code += 1;
+                                file = new File(path + "/" + code + ".jpg");
+                                continue;
+                            }
+
+                        }
+
+                        /*Mat src = Imgcodecs.imread(file.getAbsolutePath());
+                        if (src.empty()) {
+                            try {
+                                Thread.sleep(100);
+                            } catch (InterruptedException e) {
+                                e.printStackTrace();
+                            }
+                            continue;
+                        }*/
+
+
+                        Bitmap originalBitmap = BitmapFactory.decodeFile(file.getAbsolutePath());
+                        Bitmap mBitmap = originalBitmap.copy(Bitmap.Config.ARGB_8888, true);
+                        Bitmap bitmap = ArcSoftImageUtil.getAlignedBitmap(originalBitmap, true);
+                        byte[] bgr24 = ArcSoftImageUtil.createImageData(bitmap.getWidth(), bitmap.getHeight(), ArcSoftImageFormat.BGR24);
+                        int transformCode = ArcSoftImageUtil.bitmapToImageData(bitmap, bgr24, ArcSoftImageFormat.BGR24);
+                        if (transformCode != ArcSoftImageUtilError.CODE_SUCCESS) {
+                            Log.d(TAG, "onClick: " + transformCode);
+                            return;
+                        }
+                        List<FaceInfo> faceInfoList = new ArrayList<>();
+                        int errCode = faceEngine.detectFaces(bgr24, bitmap.getWidth(), bitmap.getHeight(), FaceEngine.CP_PAF_BGR24, faceInfoList);
+                        Canvas canvas = new Canvas(mBitmap);
+                        Paint paint = new Paint();
+                        paint.setColor(Color.RED);
+                        paint.setStrokeWidth(10);
+                        paint.setStyle(Paint.Style.STROKE);
+                        if (code == com.arcsoft.face.ErrorInfo.MOK && faceInfoList.size() > 0) {
+                            Log.d(TAG, "onClick: " + "detect success! " + faceInfoList.size());
+                            for (FaceInfo face : faceInfoList) {
+                                canvas.drawRect(face.getRect(), paint);
+                                Log.d(TAG, "onClick: 矩形坐标 " + face.getRect().left + " " + face.getRect().top + " " + face.getRect().right + " " + face.getRect().bottom);
+                            }
+
+                        } else {
+                            Log.d(TAG, "onClick: " + "detect failed! " + errCode);
+                        }
+
+
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                faceRect.setImageBitmap(mBitmap);
+                            }
+                        });
+
+                        code += 1;
+                        file.delete();
+                        file = new File(path + "/" + code + ".jpg");
+
+                        Log.d(TAG, "run: " + "进入下一个循环");
+
+                        try {
+                            Thread.sleep(500);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                    Log.d(TAG, "run: " + "跳出循环");
+                }
+
+        };
+
+           facedetect.start();
+
+
+    }
+
+    private void initFaceDetector() throws IOException {
+        InputStream input = getResources().openRawResource(R.raw.haarcascade_frontalface_alt);
+        File cascadeDir = getDir("cascade", Context.MODE_PRIVATE);
+        File file = new File(cascadeDir.getAbsolutePath(), "haarcascade_frontalface_alt.xml");
+        Log.d(TAG, "initFaceDetector: " + file.getAbsolutePath());
+        FileOutputStream output = new FileOutputStream(file);
+        byte[] buff = new byte[4096];
+        int len = 0;
+        while ((len = input.read(buff)) != -1) {
+            output.write(buff, 0 , len);
+
+        }
+        input.close();
+        output.close();
+        faceDetector = new CascadeClassifier(file.getAbsolutePath());
+        if (faceDetector.empty()) {
+            Toast.makeText(this, "加载错误", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        file.delete();
+        cascadeDir.delete();
+        Log.d(TAG, "initFaceDetector: " + "initial success");
+
+    }
+
+    private void faceDetection(Mat src, Mat dst) {
+        Log.d(TAG, "faceDetection: ");
+        Mat gray = new Mat();
+        Imgproc.cvtColor(src, gray, Imgproc.COLOR_BGR2GRAY);
+        MatOfRect faces = new MatOfRect();
+        faceDetector.detectMultiScale(gray, faces, 1.1, 4, 0, new Size(100, 100), new Size());
+        List<org.opencv.core.Rect> faceList = faces.toList();
+        //src.copyTo(dst);
+        if (faceList.size() > 0) {
+            for (org.opencv.core.Rect rect : faceList) {
+                Log.d(TAG, "faceDetection: " + rect.tl() + " " + rect.br());
+                Imgproc.rectangle(dst, new Point(rect.tl().x / 1920 * dispWidth, rect.tl().y / 1080 * dispHeight), new Point(rect.br().x / 1920 * dispWidth, rect.br().y / 1080 * dispHeight), new Scalar(255, 0 , 0), 2, 8, 0);
+
+            }
+        } else{
+            Log.d(TAG, "faceDetection: " + faceList.size());
+        }
+
+        gray.release();
+    }
+
+    private void screenShot() {
+        timer = new Timer();
+        timer.schedule(new TimerTask() {
+
+            @Override
+            public void run() {
+
+                faceDetectCapture(code);
+                code += 1;
+                if (code > 5) {
+                    code = 1;
+                }
+
+            }
+        }, 0 , 200);
+    }
+    //首次使用虹软需要激活引擎
+    private void activeEngine() {
+        int code = FaceEngine.activeOnline(this, Constants.APP_ID, Constants.SDK_KEY);
+        if(code == com.arcsoft.face.ErrorInfo.MOK){
+            Log.i(TAG, "activeOnline success");
+        }else if(code == com.arcsoft.face.ErrorInfo.MERR_ASF_ALREADY_ACTIVATED){
+            Log.i(TAG, "already activated");
+        }else{
+            Log.i(TAG, "activeOnline failed, code is : " + code);
+        }
+    }
+
+}
+
+class MyThread extends Thread {
+    public volatile boolean exit = false;
 }

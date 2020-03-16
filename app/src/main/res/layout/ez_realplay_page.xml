@@ -32,6 +32,11 @@
 				android:layout_height="match_parent"
 				android:background="@android:color/transparent" />
 
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:id="@+id/face_rect"
+                android:src="@color/white"/>
 			<include layout="@layout/realplay_loading_layout"
 				android:layout_width="match_parent"
 				android:layout_height="match_parent"/>
@@ -117,7 +122,11 @@
 		</LinearLayout>
 
     </RelativeLayout>
-    
+    <Button
+		android:layout_width="wrap_content"
+		android:layout_height="wrap_content"
+		android:text="人脸识别"
+		android:id="@+id/face_detect"/>
 	<include layout="@layout/ezopen_realplay_operate_bar" android:visibility="gone"/>
 	<include layout="@layout/ezopen_realplay_operate_bar2" android:visibility="gone"/>				  		
 </LinearLayout>

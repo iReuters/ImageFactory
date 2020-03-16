@@ -2,7 +2,7 @@
 
 <resources>
     <string name="cameras_txt">我的</string>
-    <string name="app_name">EZOpenSDK</string>
+    <string name="app_name">智能摄像头</string>
     <string name="exit">确定退出登录</string>
     <string name="exit_tip">是否要切换到其他账号？ \注意：当前app将会被强制关闭，请重新手动打开它！</string>
     <string name="confirm">确定</string>

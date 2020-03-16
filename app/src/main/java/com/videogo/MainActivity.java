@@ -8,8 +8,7 @@ import android.database.DataSetObserver;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
-import android.support.annotation.NonNull;
-import android.support.v4.content.ContextCompat;
+
 import android.text.TextUtils;
 import android.util.Log;
 import android.util.TypedValue;
@@ -23,6 +22,10 @@ import android.widget.SpinnerAdapter;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
+import androidx.core.content.ContextCompat;
+
+import com.bumptech.glide.load.resource.drawable.GlideDrawable;
 import com.ezviz.opensdk.auth.EZAuthAPI;
 import com.google.gson.Gson;
 import com.videogo.constant.Config;

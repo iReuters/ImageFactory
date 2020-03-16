@@ -1,7 +1,8 @@
 package ezviz.ezopensdk.demo;
 
 import android.app.Application;
-import android.support.annotation.NonNull;
+
+import androidx.annotation.NonNull;
 
 import com.videogo.debug.TestParams;
 import com.videogo.openapi.EZOpenSDK;
@@ -9,7 +10,7 @@ import com.videogo.openapi.EzvizAPI;
 
 public class SdkInitTool {
 
-    public static void initSdk(@NonNull Application application,  @NonNull SdkInitParams sdkInitParams){
+    public static void initSdk(@NonNull Application application, @NonNull SdkInitParams sdkInitParams){
         TestParams.setUse(true);
         /*
          * sdk日志开关，正式发布需要去掉
