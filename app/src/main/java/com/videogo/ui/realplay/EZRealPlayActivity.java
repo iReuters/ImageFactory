@@ -17,14 +17,17 @@ package com.videogo.ui.realplay;
 
 import android.annotation.SuppressLint;
 import android.app.Application;
+import android.app.Person;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Camera;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -38,12 +41,16 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Message;
 import android.os.SystemClock;
+import android.provider.MediaStore;
 import android.text.TextUtils;
+import android.util.Base64;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
+import android.view.MenuInflater;
+import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -71,15 +78,31 @@ import android.widget.RelativeLayout.LayoutParams;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
+import androidx.appcompat.widget.PopupMenu;
+import androidx.core.view.GravityCompat;
+import androidx.drawerlayout.widget.DrawerLayout;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+
 import com.arcsoft.arcfacedemo.common.Constants;
+import com.arcsoft.face.AgeInfo;
 import com.arcsoft.face.FaceEngine;
+import com.arcsoft.face.FaceFeature;
 import com.arcsoft.face.FaceInfo;
+import com.arcsoft.face.FaceSimilar;
+import com.arcsoft.face.GenderInfo;
 import com.arcsoft.face.enums.DetectFaceOrientPriority;
 import com.arcsoft.face.enums.DetectMode;
+import com.arcsoft.face.util.ImageUtils;
 import com.arcsoft.imageutil.ArcSoftImageFormat;
 import com.arcsoft.imageutil.ArcSoftImageUtil;
 import com.arcsoft.imageutil.ArcSoftImageUtilError;
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 import com.videogo.EzvizApplication;
+import com.videogo.PersonInfo;
+import com.videogo.PersonInfoAdapter;
 import com.videogo.RootActivity;
 import com.videogo.constant.Config;
 import com.videogo.constant.Constant;
@@ -99,6 +122,7 @@ import com.videogo.openapi.bean.EZCameraInfo;
 import com.videogo.openapi.bean.EZDeviceInfo;
 import com.videogo.openapi.bean.EZVideoQualityInfo;
 import com.videogo.realplay.RealPlayStatus;
+import com.videogo.scan.main.Contents;
 import com.videogo.ui.cameralist.EZCameraListActivity;
 import com.videogo.ui.common.ScreenOrientationHelper;
 import com.videogo.ui.util.ActivityUtils;
@@ -121,41 +145,41 @@ import com.videogo.widget.TitleBar;
 import com.videogo.widget.WaitDialog;
 import com.videogo.widget.loading.LoadingTextView;
 
+
 import org.MediaPlayer.PlayM4.Player;
 import org.opencv.android.OpenCVLoader;
-import org.opencv.core.CvException;
-import org.opencv.core.Mat;
-import org.opencv.core.MatOfRect;
-import org.opencv.core.Point;
-import org.opencv.core.Scalar;
-import org.opencv.core.Size;
-import org.opencv.imgcodecs.Imgcodecs;
-import org.opencv.imgproc.Imgproc;
+
 import org.opencv.objdetect.CascadeClassifier;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
 import java.util.Random;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.UUID;
 
 import ezviz.ezopensdk.debug.VideoFileUtil;
 import ezviz.ezopensdk.demo.DemoConfig;
 import ezviz.ezopensdk.R;
-import ezviz.ezopensdk.debug.VideoFileUtil;
-import ezviz.ezopensdk.demo.DemoConfig;
+import io.github.lijunguan.imgselector.ImageSelector;
+
 
 import static com.videogo.openapi.EZConstants.MSG_GOT_STREAM_TYPE;
 import static com.videogo.openapi.EZConstants.MSG_VIDEO_SIZE_CHANGED;
 
 public class EZRealPlayActivity extends RootActivity implements OnClickListener, SurfaceHolder.Callback,
-        Handler.Callback, OnTouchListener, VerifyCodeInput.VerifyCodeInputListener {
+        Handler.Callback, OnTouchListener, VerifyCodeInput.VerifyCodeInputListener  {
     private static final String TAG = EZRealPlayActivity.class.getSimpleName();
 
     private static final int ANIMATION_DURING_TIME = 500;
@@ -252,6 +276,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
     private Button mRealPlaySslBtn = null;
     private ImageButton mRealPlayPrivacyBtn = null;
     private ImageButton mRealPlayCaptureBtn = null;
+    private ImageButton mRealPlayIntelligentDetectionBtn = null;
     private View mRealPlayRecordContainer = null;
 
     private ImageButton mRealPlayRecordBtn = null;
@@ -273,6 +298,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
     private TextView mRealPlayFullRateTv = null;
     private TextView mRealPlayFullFlowTv = null;
     private TextView mRealPlayRatioTv = null;
+    private ImageButton mRealPlayFullIntelligentDetectionBtn = null;
 
     private ImageButton mRealPlayFullPtzAnimBtn = null;
     private ImageView mRealPlayFullPtzPromptIv = null;
@@ -284,10 +310,12 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
 
     private PopupWindow mQualityPopupWindow = null;
     private PopupWindow mPtzPopupWindow = null;
+    private PopupWindow mFaceDetectionWindow = null;
     private LinearLayout mPtzControlLy = null;
     private PopupWindow mTalkPopupWindow = null;
     private RingView mTalkRingView = null;
     private Button mTalkBackControlBtn = null;
+
 
     private WaitDialog mWaitDialog = null;
 
@@ -314,6 +342,8 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
     // 对讲模式 Talkback mode
     private boolean mIsOnTalk = false;
 
+    private boolean mIsOnFaceDetection;
+
     // 直播预告 Live announcements
     private TextView mRealPlayPreviewTv = null;
 
@@ -333,9 +363,16 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
     private String path = Environment.getExternalStorageDirectory().getAbsolutePath() + "/0_OpenSDK/Face_Detection";
     private MyThread thrd;
     private MyThread facedetect;
+    private boolean isFaceCompare = false;
 
+    private ArrayList<PersonInfo> registeredPersonList = new ArrayList<>();
     private FaceEngine faceEngine = new FaceEngine();
+    private ImageView imageView;
+    private DrawerLayout drawerLayout;
+    private RecyclerView recyclerView;
+    private LinearLayout linearLayout;
 
+    private int succeedReg;
     private int mRealFlow = 0;
 
     //    private GoogleApiClient client;
@@ -347,6 +384,8 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
         View decorView = getWindow().getDecorView();
         decorView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
         getWindow().setStatusBarColor(Color.TRANSPARENT);
+        faceEngine.init(this, DetectMode.ASF_DETECT_MODE_IMAGE, DetectFaceOrientPriority.ASF_OP_0_ONLY, 32, 20,
+                FaceEngine.ASF_FACE_DETECT | FaceEngine.ASF_FACE_RECOGNITION | FaceEngine.ASF_GENDER | FaceEngine.ASF_AGE);
 
         initData();
 
@@ -362,8 +401,8 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
     protected void onPause() {
         super.onPause();
         Log.d(TAG, "onPause: ");
-        if (timer != null && facedetect != null){
-            timer.cancel();
+        if (thrd != null && facedetect != null){
+            thrd.exit = true;
             facedetect.exit = true;
         }
 
@@ -447,10 +486,11 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        registeredPersonList = null;
         File file = new File(path);
         File[] files = file.listFiles();
-        if (timer != null && facedetect != null){
-            timer.cancel();
+        if (thrd != null && facedetect != null){
+            thrd.exit = true;
             Log.d(TAG, "onDestroy: " + "停止截图");
             facedetect.exit = true;
         }
@@ -476,6 +516,8 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
             mBroadcastReceiver = null;
         }
         mScreenOrientationHelper = null;
+
+        unInitEngine();
     }
 
    private void  exit(){
@@ -601,6 +643,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
         }
     }
 
+
     private class RealPlayBroadcastReceiver extends BroadcastReceiver {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -664,15 +707,51 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
         setContentView(R.layout.ez_realplay_page);
         //保持屏幕常亮 Keep the screen on
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
         initTitleBar();
         initRealPlayPageLy();
         initLoadingUI();
         faceRect = findViewById(R.id.face_rect);
-        findViewById(R.id.face_detect).setOnClickListener(this);
+        findViewById(R.id.reg_person).setOnClickListener(this);
+        recyclerView = findViewById(R.id.realplay_page_rv);
+        LinearLayoutManager manager = new LinearLayoutManager(this);
+        recyclerView.setLayoutManager(manager);
+
+
+
         mRealPlayPlayRl = (RelativeLayout) findViewById(R.id.realplay_play_rl);
+        drawerLayout = findViewById(R.id.realplay_page_dl);
+        linearLayout = findViewById(R.id.realplay_page_ll);
         mRealPlaySv = (SurfaceView) findViewById(R.id.realplay_sv);
         mRealPlaySh = mRealPlaySv.getHolder();
         mRealPlaySh.addCallback(this);
+        drawerLayout.setScrimColor(Color.TRANSPARENT);
+        drawerLayout.setBackgroundColor(0xe0e0e0);
+        ViewGroup.LayoutParams params = linearLayout.getLayoutParams();
+        params.width = (int) (getWindowManager().getDefaultDisplay().getWidth() * 0.6);
+        linearLayout.setLayoutParams(params);
+
+        drawerLayout.setDrawerListener(new DrawerLayout.DrawerListener() {
+            @Override
+            public void onDrawerSlide(@NonNull View drawerView, float slideOffset) {
+
+            }
+
+            @Override
+            public void onDrawerOpened(@NonNull View drawerView) {
+                drawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED);
+            }
+
+            @Override
+            public void onDrawerClosed(@NonNull View drawerView) {
+                drawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED);
+            }
+
+            @Override
+            public void onDrawerStateChanged(int newState) {
+
+            }
+        });
 
         mRealPlayTouchListener = new CustomTouchListener() {
             @Override
@@ -764,6 +843,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
         mRealPlayControlRl = (LinearLayout) findViewById(R.id.realplay_control_rl);
         mRealPlayBtn = (ImageButton) findViewById(R.id.realplay_play_btn);
         mRealPlaySoundBtn = (ImageButton) findViewById(R.id.realplay_sound_btn);
+        mLocalInfo.setSoundOpen(false);
         mRealPlayFlowTv = (TextView) findViewById(R.id.realplay_flow_tv);
         mRealPlayFlowTv.setText("0k/s");
 
@@ -1040,6 +1120,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
             mRealPlayRecordBtn = (ImageButton) findViewById(R.id.realplay_video_btn);
             mRealPlayRecordStartBtn = (ImageButton) findViewById(R.id.realplay_video_start_btn);
             mRealPlayPtzBtn = (ImageButton) findViewById(R.id.realplay_ptz_btn);
+            mRealPlayIntelligentDetectionBtn = findViewById(R.id.intelligent_detection);
         }
         mRealPlayTalkBtn.setEnabled(false);
         mRealPlayOperateBar.setVisibility(View.VISIBLE);
@@ -1315,7 +1396,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
         mRealPlaySh = null;
     }
 
-
+    private int num = 0;
     /*
      * (non-Javadoc)
      * @see android.view.View.OnClickListener#onClick(android.view.View)
@@ -1323,17 +1404,48 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
     @Override
     public void onClick(View view) {
         switch (view.getId()) {
+            case R.id.next:
+                if (registeredPersonList.size() != 0) {
+
+                    for (int i= 0; i < registeredPersonList.size(); i++) {
+                        Log.d(TAG, "onActivityResult: " + "id: " + registeredPersonList.get(i).getId() + " age: " + registeredPersonList.get(i).getAge() + " " + " gender: " + registeredPersonList.get(i).getGender()
+                                + " bitmapList: " + registeredPersonList.size());
+                    }
+
+                    //imageView.setImageBitmap(registeredPersonList.get(num).getPortrait());
+                    if (num == registeredPersonList.size() - 1) {
+                        num = 0;
+                    } else {
+                        num += 1;
+                    }
+                }
+                break;
             case R.id.face_detect:
                 Toast.makeText(this, "开始识别", Toast.LENGTH_SHORT).show();
 
                 try {
-                    screenShot();
+                    faceDetectCapture();
                     Thread.sleep(200);
                     drawFaceRect(faceRect, dispWidth, dispHeight);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
 
+                break;
+            case R.id.face_compare:
+                isFaceCompare = true;
+                break;
+            case R.id.face_reg:
+                openFaceRegPopupWindow();
+                break;
+            case R.id.reg_person:
+                registeredPersonList = getPersonData();
+                for (PersonInfo personInfo : registeredPersonList) {
+                    Log.d(TAG, "onClick: " + personInfo.getId() + personInfo.getAge() + personInfo.getGender());
+                }
+                PersonInfoAdapter personInfoAdapter = new PersonInfoAdapter(registeredPersonList);
+                recyclerView.setAdapter(personInfoAdapter);
+                drawerLayout.openDrawer(GravityCompat.END);
                 break;
             case R.id.realplay_play_btn:
             case R.id.realplay_full_play_btn:
@@ -1374,6 +1486,12 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
             case R.id.realplay_ptz_btn:
             case R.id.realplay_ptz_btn2:
                 openPtzPopupWindow(mRealPlayPlayRl);
+                break;
+            case R.id.intelligent_detection:
+                openFaceDetectionPopupWindow(mRealPlayPlayRl);
+                break;
+            case R.id.face_close_btn:
+                closeFaceDetectionPopupWindow();
                 break;
             case R.id.realplay_full_ptz_btn:
                 setFullPtzStartUI(true);
@@ -1857,6 +1975,99 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
         }
     }
 
+    private void openFaceDetectionPopupWindow(View parent) {
+        closeFaceDetectionPopupWindow();
+        View layoutView = View.inflate(this, R.layout.realplay_facedetection_wnd, null);
+        imageView = layoutView.findViewById(R.id.iv1);
+        layoutView.findViewById(R.id.face_detect).setOnClickListener(this);
+        layoutView.findViewById(R.id.face_compare).setOnClickListener(this);
+        layoutView.findViewById(R.id.face_reg).setOnClickListener(this);
+        layoutView.findViewById(R.id.next).setOnClickListener(this);
+        layoutView.findViewById(R.id.face_close_btn).setOnClickListener(this);
+        int height = mLocalInfo.getScreenHeight() - mPortraitTitleBar.getHeight() - mRealPlayPlayRl.getHeight()
+                - (mRealPlayRect != null ? mRealPlayRect.top : mLocalInfo.getNavigationBarHeight());
+        mFaceDetectionWindow = new PopupWindow(layoutView, LayoutParams.MATCH_PARENT, height, true);
+        mFaceDetectionWindow.setAnimationStyle(R.style.popwindowUpAnim);
+        mFaceDetectionWindow.setOutsideTouchable(true);
+        mFaceDetectionWindow.showAsDropDown(parent);
+        mFaceDetectionWindow.setOnDismissListener(new OnDismissListener() {
+            @Override
+            public void onDismiss() {
+                mFaceDetectionWindow = null;
+                closeFaceDetectionPopupWindow();
+            }
+        });
+        mFaceDetectionWindow.update();
+    }
+
+    private void closeFaceDetectionPopupWindow() {
+        if (mFaceDetectionWindow != null) {
+            dismissPopWindow(mFaceDetectionWindow);
+            mFaceDetectionWindow = null;
+        }
+    }
+
+    private void openFaceRegPopupWindow() {
+        if ((registeredPersonList = getPersonData()) == null) {
+            registeredPersonList = new ArrayList<>();
+        }
+
+        View view = View.inflate(this, R.layout.realplay_facereg_wnd, null);
+        Button album = view.findViewById(R.id.btn_pop_album);
+        Button camrea = view.findViewById(R.id.btn_pop_camera);
+        Button cancel = view.findViewById(R.id.btn_pop_cancel);
+
+        int width = getResources().getDisplayMetrics().widthPixels;
+        int height = getResources().getDisplayMetrics().heightPixels / 3;
+        PopupWindow popupWindow = new PopupWindow(view, width, LayoutParams.WRAP_CONTENT);
+        popupWindow.setAnimationStyle(R.style.popwindowUpAnim);
+        popupWindow.setFocusable(true);
+        popupWindow.setOutsideTouchable(true);
+
+        album.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                ImageSelector.getInstance()
+                        .setSelectModel(ImageSelector.MULTI_MODE)
+                        .setMaxCount(5)
+                        .setGridColumns(3)
+                        .setShowCamera(false)
+                        .startSelect(EZRealPlayActivity.this);
+            }
+        });
+        camrea.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+
+                //intent.putExtra("android.intent.extras.CAMERA_FACING", 1); // 调用前置摄像头
+
+                startActivityForResult(intent, ImageSelector.REQUEST_OPEN_CAMERA);
+            }
+        });
+        cancel.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                popupWindow.dismiss();
+            }
+        });
+
+        popupWindow.setOnDismissListener(new OnDismissListener() {
+            @Override
+            public void onDismiss() {
+                WindowManager.LayoutParams layoutParams = getWindow().getAttributes();
+                layoutParams.alpha = 1.0f;
+                getWindow().setAttributes(layoutParams);
+            }
+        });
+        WindowManager.LayoutParams layoutParams = getWindow().getAttributes();
+        layoutParams.alpha = 0.4f;
+        getWindow().setAttributes(layoutParams);
+        popupWindow.showAtLocation(view, Gravity.BOTTOM, 0, 0);
+    }
+
+
+
     private void openQualityPopupWindow(View anchor) {
         if (mEZPlayer == null) {
             return;
@@ -2221,7 +2432,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
         }
         mStreamFlow = 0;
     }
-
+   //未加载好时按钮为灰色
     private void setRealPlayLoadingUI() {
         mStartTime = System.currentTimeMillis();
         setStartloading();
@@ -2230,6 +2441,8 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
         if (mCameraInfo != null  && mDeviceInfo != null) {
             mRealPlayCaptureBtn.setEnabled(false);
             mRealPlayRecordBtn.setEnabled(false);
+            mRealPlayIntelligentDetectionBtn.setEnabled(false);
+            //mRealPlayIntelligentDetectionBtn.setEnabled(false);
             if (mDeviceInfo.getStatus() == 1) {
                 mRealPlayQualityBtn.setEnabled(true);
             } else {
@@ -2242,6 +2455,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
             mRealPlayFullRecordBtn.setEnabled(false);
             mRealPlayFullFlowLy.setVisibility(View.GONE);
             mRealPlayFullPtzBtn.setEnabled(false);
+           // mRealPlayFullIntelligentDetectionBtn.setEnabled(false);
         }
 
         showControlRlAndFullOperateBar();
@@ -2280,6 +2494,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
             setFullPtzStopUI(false);
             mRealPlayCaptureBtn.setEnabled(false);
             mRealPlayRecordBtn.setEnabled(false);
+           // mRealPlayIntelligentDetectionBtn.setEnabled(false);
             if (mDeviceInfo.getStatus() == 1) {
                 mRealPlayQualityBtn.setEnabled(true);
             } else {
@@ -2298,6 +2513,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
             mRealPlayFullCaptureBtn.setEnabled(false);
             mRealPlayFullRecordBtn.setEnabled(false);
             mRealPlayPtzBtn.setEnabled(false);
+            //mRealPlayFullIntelligentDetectionBtn.setEnabled(false);
         }
     }
 
@@ -2322,6 +2538,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
 
             mRealPlayCaptureBtn.setEnabled(false);
             mRealPlayRecordBtn.setEnabled(false);
+            //mRealPlayIntelligentDetectionBtn.setEnabled(false);
             if (mDeviceInfo.getStatus() == 1 && (mEZPlayer == null)) {
                 mRealPlayQualityBtn.setEnabled(true);
             } else {
@@ -2340,6 +2557,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
             mRealPlayFullCaptureBtn.setEnabled(false);
             mRealPlayFullRecordBtn.setEnabled(false);
             mRealPlayFullPtzBtn.setEnabled(false);
+           // mRealPlayFullIntelligentDetectionBtn.setEnabled(false);
         }
     }
 
@@ -2356,6 +2574,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
         if (mCameraInfo != null && mDeviceInfo != null) {
             mRealPlayCaptureBtn.setEnabled(true);
             mRealPlayRecordBtn.setEnabled(true);
+            mRealPlayIntelligentDetectionBtn.setEnabled(true);
             if (mDeviceInfo.getStatus() == 1) {
                 mRealPlayQualityBtn.setEnabled(true);
             } else {
@@ -2369,6 +2588,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
             mRealPlayFullCaptureBtn.setEnabled(true);
             mRealPlayFullRecordBtn.setEnabled(true);
             mRealPlayFullPtzBtn.setEnabled(true);
+          //  mRealPlayFullIntelligentDetectionBtn.setEnabled(true);
         }
 
 //        setRealPlaySound();
@@ -3431,7 +3651,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
         }
     };
 
-    private void faceDetectCapture(final int code) {
+    private void faceDetectCapture() {
 
         mControlDisplaySec = 0;
         if (!SDCardUtil.isSDCardUseable()) {
@@ -3452,11 +3672,15 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
             mCaptureDisplaySec = 4;
             updateCaptureUI();
 
+
             thrd = new MyThread() {
                 @Override
                 public void run() {
+                    while (!thrd.exit) {
+                        Log.d(TAG, "run: " + "开始截图");
 
                         Bitmap bmp = mEZPlayer.capturePicture();
+
                         if (bmp != null) {
                             try {
 
@@ -3467,10 +3691,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
                                 if (!file.exists()) {
                                     file.mkdir();
                                 }
-
                                 final String strCaptureFile = path + "/" + code + ".jpg";
-                                //LogUtil.e(TAG, "captured picture file path is " + strCaptureFile);
-
                                 if (TextUtils.isEmpty(strCaptureFile)) {
                                     bmp.recycle();
                                     bmp = null;
@@ -3481,26 +3702,32 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
 
                                 MediaScanner mMediaScanner = new MediaScanner(EZRealPlayActivity.this);
                                 mMediaScanner.scanFile(strCaptureFile, "jpg");
-                            /*runOnUiThread(new Runnable() {
-                                @Override
-                                public void run() {
-                                    Toast.makeText(EZRealPlayActivity.this, getResources().getString(R.string.already_saved_to_volume)+strCaptureFile, Toast.LENGTH_SHORT).show();
-                                }
-                            });*/
+
                             } catch (InnerException e) {
                                 e.printStackTrace();
                             } finally {
                                 if (bmp != null) {
                                     bmp.recycle();
                                     bmp = null;
-                                    return;
+
                                 }
                             }
                         } else {
                             return;
                         }
                         super.run();
+                        try {
+                            Thread.sleep(50);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                        Log.d(TAG, "run: " + "截图" + code);
+                        code += 1;
+                        if (code > 5) {
+                            code = 1;
+                        }
                     }
+                }
 
             };
             thrd.start();
@@ -3534,8 +3761,6 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
 
     private void drawFaceRect(final ImageView faceRect, int dispWidth, int dispHeight) {
 
-        faceEngine.init(this, DetectMode.ASF_DETECT_MODE_IMAGE, DetectFaceOrientPriority.ASF_OP_0_ONLY, 32, 20, FaceEngine.ASF_FACE_DETECT);
-
         bitmap = Bitmap.createBitmap(dispWidth, dispHeight, Bitmap.Config.ARGB_8888);
 
         final String path = Environment.getExternalStorageDirectory().getAbsolutePath() + "/0_OpenSDK/Face_Detection";
@@ -3562,6 +3787,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
                         if (!file.exists()) {
                             if (code > 5) {
                                 code = 1;
+                                continue;
                             } else {
                                 code += 1;
                                 file = new File(path + "/" + code + ".jpg");
@@ -3572,7 +3798,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
 
                         if (file.length() == 0) {
                             try {
-                                Thread.sleep(100);
+                                Thread.sleep(500);
                             } catch (InterruptedException e) {
                                 e.printStackTrace();
                             }
@@ -3580,37 +3806,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
                             continue;
                         }
 
-
-
-
-                        Bitmap originalBitmap = BitmapFactory.decodeFile(file.getAbsolutePath());
-                        Bitmap mBitmap = originalBitmap.copy(Bitmap.Config.ARGB_8888, true);
-                        Bitmap alignedBitmap = ArcSoftImageUtil.getAlignedBitmap(originalBitmap, true);
-                        byte[] bgr24 = ArcSoftImageUtil.createImageData(alignedBitmap.getWidth(), alignedBitmap.getHeight(), ArcSoftImageFormat.BGR24);
-                        int transformCode = ArcSoftImageUtil.bitmapToImageData(alignedBitmap, bgr24, ArcSoftImageFormat.BGR24);
-                        if (transformCode != ArcSoftImageUtilError.CODE_SUCCESS) {
-                            Log.d(TAG, "onClick: " + transformCode);
-                            return;
-                        }
-                        List<FaceInfo> faceInfoList = new ArrayList<>();
-                        int errCode = faceEngine.detectFaces(bgr24, alignedBitmap.getWidth(), alignedBitmap.getHeight(), FaceEngine.CP_PAF_BGR24, faceInfoList);
-                        Canvas canvas = new Canvas(bitmap);
-                        Paint paint = new Paint();
-                        paint.setColor(Color.RED);
-                        paint.setStrokeWidth(6);
-                        paint.setStyle(Paint.Style.STROKE);
-                        if (errCode == com.arcsoft.face.ErrorInfo.MOK && faceInfoList.size() > 0) {
-                            Log.d(TAG, "onClick: " + "detect success! " + faceInfoList.size());
-                            for (FaceInfo face : faceInfoList) {
-                                canvas.drawRect((float)face.getRect().left / 1920 * dispWidth, (float)face.getRect().top / 1080 * dispHeight,
-                                        (float)face.getRect().right / 1920 * dispWidth, (float)face.getRect().bottom / 1080 * dispHeight, paint);
-                                Log.d(TAG, "onClick: 矩形坐标 " + face.getRect().left + " " + face.getRect().top + " " + face.getRect().right + " " + face.getRect().bottom);
-                            }
-
-                        } else {
-                            Log.d(TAG, "onClick: " + "detect failed! " + errCode);
-                        }
-
+                        faceDetect(file.getAbsolutePath());
 
                         runOnUiThread(new Runnable() {
                             @Override
@@ -3638,71 +3834,311 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
 
            facedetect.start();
 
-
     }
 
-    private void initFaceDetector() throws IOException {
-        InputStream input = getResources().openRawResource(R.raw.haarcascade_frontalface_alt);
-        File cascadeDir = getDir("cascade", Context.MODE_PRIVATE);
-        File file = new File(cascadeDir.getAbsolutePath(), "haarcascade_frontalface_alt.xml");
-        Log.d(TAG, "initFaceDetector: " + file.getAbsolutePath());
-        FileOutputStream output = new FileOutputStream(file);
-        byte[] buff = new byte[4096];
-        int len = 0;
-        while ((len = input.read(buff)) != -1) {
-            output.write(buff, 0 , len);
-
-        }
-        input.close();
-        output.close();
-        faceDetector = new CascadeClassifier(file.getAbsolutePath());
-        if (faceDetector.empty()) {
-            Toast.makeText(this, "加载错误", Toast.LENGTH_SHORT).show();
+    //开始识别并绘制矩形框
+    private void faceDetect(String filePath) {
+        Bitmap originalBitmap = BitmapFactory.decodeFile(filePath);
+        Bitmap alignedBitmap = ArcSoftImageUtil.getAlignedBitmap(originalBitmap, true);
+        if (alignedBitmap == null) {
             return;
         }
-        file.delete();
-        cascadeDir.delete();
-        Log.d(TAG, "initFaceDetector: " + "initial success");
-
-    }
-
-    private void faceDetection(Mat src, Mat dst) {
-        Log.d(TAG, "faceDetection: ");
-        Mat gray = new Mat();
-        Imgproc.cvtColor(src, gray, Imgproc.COLOR_BGR2GRAY);
-        MatOfRect faces = new MatOfRect();
-        faceDetector.detectMultiScale(gray, faces, 1.1, 4, 0, new Size(100, 100), new Size());
-        List<org.opencv.core.Rect> faceList = faces.toList();
-        //src.copyTo(dst);
-        if (faceList.size() > 0) {
-            for (org.opencv.core.Rect rect : faceList) {
-                Log.d(TAG, "faceDetection: " + rect.tl() + " " + rect.br());
-                Imgproc.rectangle(dst, new Point(rect.tl().x / 1920 * dispWidth, rect.tl().y / 1080 * dispHeight), new Point(rect.br().x / 1920 * dispWidth, rect.br().y / 1080 * dispHeight), new Scalar(255, 0 , 0), 2, 8, 0);
-
+        byte[] bgr24 = ArcSoftImageUtil.createImageData(alignedBitmap.getWidth(), alignedBitmap.getHeight(), ArcSoftImageFormat.BGR24);
+        int transformCode = ArcSoftImageUtil.bitmapToImageData(alignedBitmap, bgr24, ArcSoftImageFormat.BGR24);
+        if (transformCode != ArcSoftImageUtilError.CODE_SUCCESS) {
+            Log.d(TAG, "onClick: " + transformCode);
+            return;
+        }
+        List<FaceInfo> faceInfoList = new ArrayList<>();
+        int errCode = faceEngine.detectFaces(bgr24, alignedBitmap.getWidth(), alignedBitmap.getHeight(), FaceEngine.CP_PAF_BGR24, faceInfoList);
+        Canvas canvas = new Canvas(bitmap);
+        Paint paint = new Paint();
+        paint.setColor(Color.RED);
+        paint.setStrokeWidth(6);
+        paint.setStyle(Paint.Style.STROKE);
+        if (errCode == com.arcsoft.face.ErrorInfo.MOK && faceInfoList.size() > 0) {
+            Log.d(TAG, "onClick: " + "detect success! " + faceInfoList.size());
+            for (FaceInfo face : faceInfoList) {
+                canvas.drawRect((float)face.getRect().left / 1920 * dispWidth, (float)face.getRect().top / 1080 * dispHeight,
+                        (float)face.getRect().right / 1920 * dispWidth, (float)face.getRect().bottom / 1080 * dispHeight, paint);
+                Log.d(TAG, "onClick: 矩形坐标 " + face.getRect().left + " " + face.getRect().top + " " + face.getRect().right + " " + face.getRect().bottom);
+                if (isFaceCompare) {
+                    //faceCompare(bgr24, alignedBitmap.getWidth(), alignedBitmap.getHeight(), FaceEngine.CP_PAF_BGR24, faceInfoList);
+                }
             }
-        } else{
-            Log.d(TAG, "faceDetection: " + faceList.size());
+
+        } else {
+            Log.d(TAG, "onClick: " + "detect failed! " + errCode);
         }
 
-        gray.release();
+    }
+    //开启人脸对比
+    private void faceCompare(byte[] data, int width, int height, int format, List<FaceInfo> faceInfoList) {
+        Bitmap myFace = BitmapFactory.decodeFile(Environment.getExternalStorageDirectory().getAbsolutePath() + "/0_OpenSDK/Captures/1582294690650.jpg");
+        Bitmap alignedBitmap = ArcSoftImageUtil.getAlignedBitmap(myFace, true);
+
+        if (alignedBitmap == null) {
+            return;
+        }
+        byte[] bgr24 = ArcSoftImageUtil.createImageData(alignedBitmap.getWidth(), alignedBitmap.getHeight(), ArcSoftImageFormat.BGR24);
+        int transformCode = ArcSoftImageUtil.bitmapToImageData(alignedBitmap, bgr24, ArcSoftImageFormat.BGR24);
+        if (transformCode != ArcSoftImageUtilError.CODE_SUCCESS) {
+            Log.d(TAG, "onClick: " + transformCode);
+            return;
+        }
+        List<FaceInfo> myFaceInfo = new ArrayList<>();
+        faceEngine.detectFaces(bgr24, alignedBitmap.getWidth(), alignedBitmap.getHeight(), FaceEngine.CP_PAF_BGR24, myFaceInfo);
+        FaceFeature myFaceFeature = new FaceFeature();
+        int myErrCode = faceEngine.extractFaceFeature(bgr24, alignedBitmap.getWidth(), alignedBitmap.getHeight(), FaceEngine.CP_PAF_BGR24, myFaceInfo.get(0), myFaceFeature);
+        Log.d(TAG, "faceCompare:我的特征长度 " + myFaceInfo.size() + " " + myErrCode);
+        FaceFeature faceFeature = new FaceFeature();
+        FaceSimilar faceSimilar = new FaceSimilar();
+        for (FaceInfo faceInfo:
+        faceInfoList) {
+            int errCode = faceEngine.extractFaceFeature(data, width, height, format, faceInfo, faceFeature);
+            Log.d(TAG, "faceCompare:待检测的识别 " + errCode);
+            faceEngine.compareFaceFeature(myFaceFeature, faceFeature, faceSimilar);
+            Log.d(TAG, "faceCompare: " + faceSimilar.getScore());
+        }
+
     }
 
-    private void screenShot() {
-        timer = new Timer();
-        timer.schedule(new TimerTask() {
+    private int faceRegister(Bitmap bitmap) {
+        int succeedReg = 0;
+        boolean isNew =true;
+        Bitmap alignedBitmap = ArcSoftImageUtil.getAlignedBitmap(bitmap, true);
+        if (alignedBitmap == null) {
+            return -1;
+        }
+        byte[] bgr24 = ArcSoftImageUtil.createImageData(alignedBitmap.getWidth(), alignedBitmap.getHeight(), ArcSoftImageFormat.BGR24);
+        int transformCode = ArcSoftImageUtil.bitmapToImageData(alignedBitmap, bgr24, ArcSoftImageFormat.BGR24);
+        if (transformCode != ArcSoftImageUtilError.CODE_SUCCESS) {
+            Log.d(TAG, "onClick: " + transformCode);
+            return -1;
+        }
+        //图片中检测到的人脸
+        int processMask = FaceEngine.ASF_AGE | FaceEngine.ASF_GENDER;
+        List<FaceInfo> myFaceInfo = new ArrayList<>();
 
-            @Override
-            public void run() {
+        List<AgeInfo> myAgeInfo = new ArrayList<>();
+        List<GenderInfo> myGenderInfo = new ArrayList<>();
+        List<Bitmap> myBitmaps = new ArrayList<>();
 
-                faceDetectCapture(code);
-                code += 1;
-                if (code > 5) {
-                    code = 1;
+
+        int myErrCode = faceEngine.detectFaces(bgr24, alignedBitmap.getWidth(), alignedBitmap.getHeight(), FaceEngine.CP_PAF_BGR24, myFaceInfo);
+        int myErrCode1 = faceEngine.process(bgr24, alignedBitmap.getWidth(), alignedBitmap.getHeight(), FaceEngine.CP_PAF_BGR24, myFaceInfo, processMask);
+        int myErrCode2 = faceEngine.getAge(myAgeInfo);
+        int myErrCode3 = faceEngine.getGender(myGenderInfo);
+        for (FaceInfo faceInfo : myFaceInfo) {
+            myBitmaps.add(ImageUtils.cropImage(bitmap, faceInfo.getRect()));
+        }
+        if (myBitmaps.size() != myFaceInfo.size()) {
+            Log.d(TAG, "faceRegister: " + "获取裁剪后的图像失败3！");
+        }
+
+
+        if (myFaceInfo.size() == 0 | myAgeInfo.size() == 0 | myGenderInfo.size() == 0) {
+            return -1;
+        }
+        FaceSimilar faceSimilar = new FaceSimilar();
+        for (int i = 0; i < myFaceInfo.size(); i++) {
+            //每次都要重新生成FaceFeature对象，否则会出错
+            FaceFeature faceFeature = new FaceFeature();
+            int myErrCode4 = faceEngine.extractFaceFeature(bgr24, alignedBitmap.getWidth(), alignedBitmap.getHeight(), FaceEngine.CP_PAF_BGR24, myFaceInfo.get(i), faceFeature);
+            if (myErrCode == com.arcsoft.face.ErrorInfo.MOK && myErrCode1 == com.arcsoft.face.ErrorInfo.MOK && myErrCode2 == com.arcsoft.face.ErrorInfo.MOK && myErrCode3 == com.arcsoft.face.ErrorInfo.MOK && myErrCode4 == com.arcsoft.face.ErrorInfo.MOK) {
+                if (registeredPersonList.size() == 0) {
+                    String fileName = UUID.randomUUID().toString();
+                    PersonInfo personInfo = new PersonInfo();
+                    personInfo.setId(fileName);
+                    personInfo.setGender(myGenderInfo.get(i).getGender());
+                    personInfo.setAge(myAgeInfo.get(i).getAge());
+                    personInfo.setFaceInfo(myFaceInfo.get(i));
+                    personInfo.setFaceFeature(faceFeature);
+                    registeredPersonList.add(personInfo);
+                    savePersonPortrait(myBitmaps.get(i), fileName);
+                    succeedReg += 1;
+                } else {
+                    for (int j = 0; j < registeredPersonList.size(); j++) {
+                        FaceFeature savedFaceFeature = registeredPersonList.get(j).getFaceFeature();
+                        faceEngine.compareFaceFeature(faceFeature, savedFaceFeature, faceSimilar);
+                        if (faceSimilar.getScore() >= 0.8) {
+                            isNew = false;
+                            break;
+                        }
+                    }
+                    if (isNew) {
+                        String fileName = UUID.randomUUID().toString();
+                        PersonInfo personInfo = new PersonInfo();
+                        personInfo.setId(fileName);
+                        personInfo.setGender(myGenderInfo.get(i).getGender());
+                        personInfo.setAge(myAgeInfo.get(i).getAge());
+                        personInfo.setFaceInfo(myFaceInfo.get(i));
+                        personInfo.setFaceFeature(faceFeature);
+                        //personInfo.setPortrait(myBitmaps.get(i));
+                        registeredPersonList.add(personInfo);
+                        savePersonPortrait(myBitmaps.get(i), fileName);
+                        succeedReg += 1;
+                        isNew = true;
+                    }
                 }
 
             }
-        }, 0 , 200);
+
+        }
+        return succeedReg;
     }
+
+    //通过返回的data参数进行人脸注册，同时剔除重复样本
+    private void imageReg(Intent data) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                int faceNum1 = registeredPersonList.size();
+
+                ArrayList<String> imagesPath = data.getStringArrayListExtra(ImageSelector.SELECTED_RESULT);
+                if(imagesPath != null){
+                    //TODO  do something...
+                    for (String path : imagesPath) {
+                        Bitmap bitmap = BitmapFactory.decodeFile(path);
+                        succeedReg = faceRegister(bitmap);
+                    }
+                }
+                int faceNum2 = registeredPersonList.size();
+                if (faceNum2 > faceNum1) {
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            Toast.makeText(EZRealPlayActivity.this, "注册成功！新增" + succeedReg + "个样本", Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                } else {
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            Toast.makeText(EZRealPlayActivity.this, "注册失败，未检测到人脸或重复注册！", Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                }
+
+                //人脸信息数据存储
+                savePersonData(registeredPersonList);
+
+            }
+        }).start();
+    }
+
+    private void camreaReg(Intent data) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                if (data.hasExtra("data")) {
+                    int faceNum1 = registeredPersonList.size();
+                    Bitmap photo = data.getParcelableExtra("data");
+
+                    succeedReg = faceRegister(photo);
+                    int faceNum2 = registeredPersonList.size();
+                    if (faceNum2 > faceNum1) {
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                Toast.makeText(EZRealPlayActivity.this, "注册成功！新增" + succeedReg + "个样本", Toast.LENGTH_SHORT).show();
+                            }
+                        });
+                    } else {
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                Toast.makeText(EZRealPlayActivity.this, "注册失败，未检测到人脸或重复注册！", Toast.LENGTH_SHORT).show();
+                            }
+                        });
+                    }
+                } else {
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            Toast.makeText(EZRealPlayActivity.this, "获取图片失败！", Toast.LENGTH_SHORT).show();
+                        }
+                    });
+
+                }
+                savePersonData(registeredPersonList);
+
+            }
+        }).start();
+    }
+
+    private void savePersonData(ArrayList<PersonInfo> personInfoList) {
+
+        SharedPreferences.Editor editor = getSharedPreferences("person_data", MODE_PRIVATE).edit();
+        Gson gson = new Gson();
+        String json = gson.toJson(personInfoList);
+        editor.putString("personInfoList", json);
+        editor.apply();
+    }
+
+    //从SD卡读取保存的人脸数据
+    private ArrayList<PersonInfo> getPersonData() {
+        SharedPreferences sharedPreferences = getSharedPreferences("person_data", MODE_PRIVATE);
+        ArrayList<PersonInfo> personInfos = null;
+        Gson gson = new Gson();
+        String json = sharedPreferences.getString("personInfoList", "");
+        Type type = new TypeToken<ArrayList<PersonInfo>>() {}.getType();
+        personInfos = gson.fromJson(json, type);
+        return personInfos;
+    }
+
+    private void savePersonPortrait(Bitmap bitmap, String fileName) {
+        String filePath = Environment.getExternalStorageDirectory().getAbsolutePath() + "/0_OpenSDK/Portraits";
+        File file = new File(filePath);
+
+        if (!file.exists()) {
+            file.mkdir();
+        }
+
+        String imageFile = filePath + "/" + fileName + ".jpg";
+        try {
+            EZUtils.saveCapturePictrue(imageFile, bitmap);
+        } catch (InnerException e) {
+            e.printStackTrace();
+        }
+
+
+    }
+
+    private void deletePersonData(String id) {
+        String filePath = Environment.getExternalStorageDirectory().getAbsolutePath() + "/0_OpenSDK/Portraits";
+        File file = new File(filePath);
+        File[] files = file.listFiles();
+        String fileName = id + ".jpg";
+        if (!file.exists()) {
+            file.mkdir();
+        }
+        for (File mFile : files) {
+            if (fileName.equals(mFile.getName())) {
+                mFile.delete();
+            }
+        }
+
+        ArrayList<PersonInfo> arrayList = new ArrayList<>();
+        if ((arrayList = getPersonData()) != null) {
+            for (int i = 0; i < arrayList.size(); i++) {
+                if (arrayList.get(i).getId().equals(id)) {
+                    arrayList.remove(i);
+                    break;
+                }
+            }
+        }
+        savePersonData(arrayList);
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                Toast.makeText(EZRealPlayActivity.this, "删除成功！", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+    }
+
+
     //首次使用虹软需要激活引擎
     private void activeEngine() {
         int code = FaceEngine.activeOnline(this, Constants.APP_ID, Constants.SDK_KEY);
@@ -3715,6 +4151,28 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
         }
     }
 
+    private void unInitEngine() {
+        if (faceEngine != null) {
+            int faceEngineCode = faceEngine.unInit();
+            Log.i(TAG, "unInitEngine: " + faceEngineCode);
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+
+        if (requestCode == ImageSelector.REQUEST_SELECT_IMAGE && resultCode == RESULT_OK) {
+            imageReg(data);
+
+
+        } else if (requestCode == ImageSelector.REQUEST_OPEN_CAMERA && resultCode == RESULT_OK && data != null) {
+            camreaReg(data);
+
+        } else if (data == null | resultCode != RESULT_OK) {
+            Toast.makeText(EZRealPlayActivity.this, "获取图片失败！", Toast.LENGTH_SHORT).show();
+        }
+        super.onActivityResult(requestCode, resultCode, data);
+    }
 }
 
 class MyThread extends Thread {

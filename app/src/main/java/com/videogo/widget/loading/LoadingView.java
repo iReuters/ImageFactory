@@ -39,9 +39,9 @@ public class LoadingView extends View {
         mBalls = new Bitmap[4];
 
         mBalls[0] = BitmapFactory.decodeResource(context.getResources(), R.drawable.logo_loading_1);
-        mBalls[1] = BitmapFactory.decodeResource(context.getResources(), R.drawable.logo_loading_2);
-        mBalls[2] = BitmapFactory.decodeResource(context.getResources(), R.drawable.logo_loading_3);
-        mBalls[3] = BitmapFactory.decodeResource(context.getResources(), R.drawable.logo_loading_4);
+        mBalls[1] = BitmapFactory.decodeResource(context.getResources(), R.drawable.logo_loading_1);
+        mBalls[2] = BitmapFactory.decodeResource(context.getResources(), R.drawable.logo_loading_1);
+        mBalls[3] = BitmapFactory.decodeResource(context.getResources(), R.drawable.logo_loading_1);
 
         mBallSize = mBalls[0].getWidth() / 2;
         mBallPaint = new Paint();

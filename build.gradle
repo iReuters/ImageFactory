@@ -24,6 +24,7 @@ allprojects {
     repositories {
         google()
         jcenter() {url 'https://maven.aliyun.com/repository/jcenter'}
-        maven { url "http://maven.hikvision.com.cn/nexus/content/groups/public/" }
+        maven { url "http://maven.hikvision.com.cn/nexus/content/groups/public/"}
+        maven { url "https://jitpack.io" }
     }
 }

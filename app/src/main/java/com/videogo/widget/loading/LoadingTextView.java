@@ -21,7 +21,7 @@ public class LoadingTextView extends FrameLayout {
     public static final int VERTICAL = 1;
 
     private LinearLayout mParentLayout;
-    private LoadingView mLoadingView;
+    private com.mingle.widget.LoadingView mLoadingView;
     private TextView mTextView;
 
     private int mTextPadding;
@@ -52,7 +52,7 @@ public class LoadingTextView extends FrameLayout {
         addView(view);
 
         mParentLayout = (LinearLayout) view;
-        mLoadingView = (LoadingView) view.findViewById(R.id.loading_view);
+        mLoadingView = view.findViewById(R.id.loading_view);
         mTextView = (TextView) view.findViewById(R.id.loading_text);
 
         setTextStyle(style);

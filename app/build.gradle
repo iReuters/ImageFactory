@@ -57,6 +57,9 @@ dependencies {
     implementation 'com.jaeger.statusbarutil:library:1.5.1'
     implementation project(path: ':OpenCV')
     implementation 'com.google.guava:guava:28.2-jre'
+    implementation 'com.github.zzz40500:android-shapeLoadingView:1.0.3.2'
     implementation project(path: ':ArcSoft')
+    implementation "com.lijunguan:imageseletor:1.0.2"
+
 
 }

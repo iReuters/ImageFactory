@@ -165,13 +165,13 @@
 		        android:id="@+id/realplay_video_container2"
 		        android:layout_width="wrap_content"
 		        android:layout_height="wrap_content" >
-		
-		        <ImageButton
-		            android:id="@+id/realplay_video_btn2"
-		            android:layout_width="wrap_content"
-		            android:layout_height="wrap_content"
-		            android:background="@drawable/play_video_selector"
-		            android:onClick="onClick" />
+
+				<ImageButton
+					android:id="@+id/realplay_video_btn2"
+					android:layout_width="wrap_content"
+					android:layout_height="match_parent"
+					android:background="@drawable/play_video_selector"
+					android:onClick="onClick" />
 		
 		        <ImageButton
 		            android:id="@+id/realplay_video_start_btn2"

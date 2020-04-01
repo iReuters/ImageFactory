@@ -53,21 +53,26 @@
             android:name="com.videogo.MainActivity"
             android:configChanges="orientation|keyboardHidden"
             android:screenOrientation="portrait"
-            android:theme="@style/FullAppTheme">
+            android:theme="@style/FullAppTheme"
+            tools:ignore="LockedOrientationActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
         <activity android:name=".debug.TestActivityForFullSdk"
-            android:screenOrientation="portrait"/>
+            android:screenOrientation="portrait"
+            tools:ignore="LockedOrientationActivity" />
         <activity android:name=".add.AddDeviceToAccountActivity"
-            android:screenOrientation="portrait"/>
+            android:screenOrientation="portrait"
+            tools:ignore="LockedOrientationActivity" />
         <activity
             android:name="com.videogo.main.EzvizWebViewActivity"
             android:configChanges="orientation|keyboardHidden"
-            android:screenOrientation="portrait" />
+            android:screenOrientation="portrait"
+            tools:ignore="LockedOrientationActivity" />
         <activity
             android:name="com.videogo.remoteplayback.list.EZPlayBackListActivity"
             android:configChanges="orientation|keyboardHidden|screenSize"
@@ -75,63 +80,81 @@
         <activity
             android:name="com.videogo.ui.cameralist.EZCameraListActivity"
             android:screenOrientation="portrait"
-            android:theme="@style/AppTheme"/>
+            android:theme="@style/AppTheme"
+            tools:ignore="LockedOrientationActivity" />
         <activity
             android:name="com.videogo.ui.realplay.EZRealPlayActivity"
             android:configChanges="orientation|keyboardHidden|screenSize"
-            android:screenOrientation="portrait" />
+            android:screenOrientation="portrait"
+            tools:ignore="LockedOrientationActivity" />
         <activity
             android:name="com.videogo.ui.message.EZMessageImageActivity2"
-            android:screenOrientation="portrait" />
+            android:screenOrientation="portrait"
+            tools:ignore="LockedOrientationActivity" />
         <activity
             android:name="com.videogo.ui.message.EZMessageActivity2"
-            android:screenOrientation="portrait" />
+            android:screenOrientation="portrait"
+            tools:ignore="LockedOrientationActivity" />
         <activity
             android:name="com.videogo.ui.remoteplayback.EZRemotePlayBackActivity"
             android:configChanges="orientation|keyboardHidden|screenSize"
-            android:screenOrientation="portrait" />
+            android:screenOrientation="portrait"
+            tools:ignore="LockedOrientationActivity" />
         <activity
             android:name="com.videogo.devicemgt.EZDeviceSettingActivity"
-            android:screenOrientation="portrait" />
+            android:screenOrientation="portrait"
+            tools:ignore="LockedOrientationActivity" />
         <activity
             android:name="com.videogo.devicemgt.ModifyDeviceNameActivity"
-            android:screenOrientation="portrait" />
+            android:screenOrientation="portrait"
+            tools:ignore="LockedOrientationActivity" />
         <activity
             android:name="com.videogo.scan.main.CaptureActivity"
-            android:screenOrientation="portrait" />
+            android:screenOrientation="portrait"
+            tools:ignore="LockedOrientationActivity" />
         <activity
             android:name="com.videogo.ui.devicelist.SeriesNumSearchActivity"
             android:launchMode="singleTask"
             android:screenOrientation="portrait"
-            android:windowSoftInputMode="adjustResize" />
+            android:windowSoftInputMode="adjustResize"
+            tools:ignore="LockedOrientationActivity" />
         <activity
             android:name="com.videogo.ui.devicelist.AutoWifiConnectingActivity"
-            android:screenOrientation="portrait" />
+            android:screenOrientation="portrait"
+            tools:ignore="LockedOrientationActivity" />
         <activity
             android:name="com.videogo.devicemgt.EZUpgradeDeviceActivity"
             android:label="@string/title_activity_ezupgrade_device" />
         <activity
             android:name="com.videogo.ui.LanDevice.LanDeviceActivity"
-            android:screenOrientation="portrait" />
+            android:screenOrientation="portrait"
+            tools:ignore="LockedOrientationActivity" />
         <activity
             android:name="com.videogo.ui.LanDevice.LanDevicePlayActivity"
-            android:screenOrientation="portrait" />
+            android:screenOrientation="portrait"
+            tools:ignore="LockedOrientationActivity" />
         <activity
             android:name="com.videogo.ui.LanDevice.LanDeviceActivateActivity"
-            android:screenOrientation="portrait" />
+            android:screenOrientation="portrait"
+            tools:ignore="LockedOrientationActivity" />
         <activity
             android:name="com.videogo.SelectDeviceList"
-            android:screenOrientation="portrait" />
+            android:screenOrientation="portrait"
+            tools:ignore="LockedOrientationActivity" />
         <activity
             android:name="com.videogo.ui.ddns.EZDDNSListActivity"
-            android:screenOrientation="portrait" />
+            android:screenOrientation="portrait"
+            tools:ignore="LockedOrientationActivity" />
         <activity
             android:name="com.videogo.OptionActivity"
-            android:screenOrientation="portrait" />
+            android:screenOrientation="portrait"
+            tools:ignore="LockedOrientationActivity" />
         <activity
             android:name="com.videogo.SupportActivity"
-            android:screenOrientation="portrait" /> <!-- receiver -->
+            android:screenOrientation="portrait"
+            tools:ignore="LockedOrientationActivity" /> <!-- receiver -->
         <receiver android:name="com.videogo.RootActivity$NotificationReceiver" />
+
     </application>
 
 </manifest>
