@@ -153,10 +153,48 @@
 		android:layout_gravity="right"
 		android:background="#e0e0e0"
 		android:id="@+id/realplay_page_ll"
-		android:layout_marginTop="316dp">
+		android:layout_marginTop="316dp"
+		android:orientation="vertical">
+
+		<FrameLayout
+			android:layout_width="match_parent"
+			android:layout_height="100dp"
+			android:background="#e0e0e0">
+			<ImageView
+				android:layout_width="match_parent"
+				android:layout_height="match_parent"
+				android:background="@drawable/face_reg_bkg"
+				android:scaleType="fitXY"/>
+			<TextView
+				android:layout_width="wrap_content"
+				android:layout_height="wrap_content"
+				android:textSize="20sp"
+				android:text="已注册的信息"
+				android:layout_gravity="bottom|center"
+				android:layout_marginBottom="2dp"/>
+			<ImageButton
+				android:layout_width="20dp"
+				android:layout_height="20dp"
+				android:id="@+id/realplay_page_face_reg"
+				android:background="@drawable/face_reg_edit"
+				android:layout_gravity="bottom|right"
+				android:layout_marginRight="5dp"
+				android:layout_marginBottom="2dp"/>
+		</FrameLayout>
+		<ImageView
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:id="@+id/face_reg_list_null"
+			android:src="@drawable/face_reg_list_null"
+			android:scaleType="fitXY"
+			android:background="#e0e0e0"/>
 		<androidx.recyclerview.widget.RecyclerView
 			android:layout_width="wrap_content"
 			android:layout_height="wrap_content"
 			android:id="@+id/realplay_page_rv"/>
+		<ImageView
+			android:layout_width="match_parent"
+			android:layout_height="200dp"
+			android:background="#e0e0e0"/>
 	</LinearLayout>
 </androidx.drawerlayout.widget.DrawerLayout>

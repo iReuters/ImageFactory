@@ -1,4 +1,4 @@
-package com.videogo;
+package com.videogo.facedetection;
 
 import android.graphics.Bitmap;
 

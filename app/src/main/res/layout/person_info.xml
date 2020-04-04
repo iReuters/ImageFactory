@@ -59,5 +59,14 @@
                     android:textSize="15sp"/>
             </LinearLayout>
         </LinearLayout>
+        <ImageButton
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:id="@+id/delete_person_info"
+            android:background="@drawable/face_info_delete"
+            android:layout_alignParentBottom="true"
+            android:layout_alignParentRight="true"
+            android:padding="10dp"
+            android:visibility="invisible"/>
     </RelativeLayout>
 </LinearLayout>

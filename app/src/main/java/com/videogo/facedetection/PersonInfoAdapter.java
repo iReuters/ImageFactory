@@ -1,21 +1,22 @@
-package com.videogo;
+package com.videogo.facedetection;
 
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Environment;
 import android.util.Log;
-import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.videogo.ui.realplay.EZRealPlayActivity;
+
 import java.io.File;
 import java.util.ArrayList;
-import java.util.List;
 
 import ezviz.ezopensdk.R;
 
@@ -27,9 +28,23 @@ public class PersonInfoAdapter extends RecyclerView.Adapter<PersonInfoAdapter.Vi
 
     private Bitmap bitmap;
 
+    private boolean isEdit;
 
-    public PersonInfoAdapter(ArrayList<PersonInfo> mPersonInfoList) {
+    private OnItemClickListener onItemClickListener;
+
+    public interface OnItemClickListener {
+        void onItemClick(View view, String id, int position, boolean isSetName);
+    }
+
+    public void setOnItemClickListener(OnItemClickListener onItemClickListener) {
+        Log.d(TAG, "setOnItemClickListener: ");
+        this.onItemClickListener = onItemClickListener;
+    }
+
+
+    public PersonInfoAdapter(ArrayList<PersonInfo> mPersonInfoList, boolean isEdit) {
         this.mPersonInfoList = mPersonInfoList;
+        this.isEdit = isEdit;
     }
 
     @NonNull
@@ -45,7 +60,7 @@ public class PersonInfoAdapter extends RecyclerView.Adapter<PersonInfoAdapter.Vi
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
 
         PersonInfo personInfo = mPersonInfoList.get(position);
-        Log.d(TAG, "onBindViewHolder: 1" + "  " + personInfo.getId());
+        Log.d(TAG, "id!!!!: " + personInfo.getId());
         String filePath = Environment.getExternalStorageDirectory().getAbsolutePath() + "/0_OpenSDK/Portraits";
         File file = new File(filePath);
         File[] files = file.listFiles();
@@ -58,10 +73,33 @@ public class PersonInfoAdapter extends RecyclerView.Adapter<PersonInfoAdapter.Vi
             }
         }
         holder.personPortrait.setImageBitmap(bitmap);
-        Log.d(TAG, "onBindViewHolder: 2");
+
         holder.personName.setText(personInfo.getName() == null? personInfo.getId() : personInfo.getName());
         holder.personAge.setText(String.valueOf(personInfo.getAge()));
         holder.personGender.setText(personInfo.getGender() == 0? "男" : "女");
+        if (isEdit) {
+            holder.deletePersonInfo.setVisibility(View.VISIBLE);
+            holder.deletePersonInfo.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (mPersonInfoList.size() != 0) {
+                        Log.d(TAG, "监听1: " + position + " " + mPersonInfoList.size() + " " + personInfo.getId());
+                        //mPersonInfoList.remove(position);
+                        onItemClickListener.onItemClick(v, personInfo.getId(), position, false);
+                    }
+
+                }
+            });
+            holder.personName.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    onItemClickListener.onItemClick(v, personInfo.getId(), position, true);
+                }
+            });
+        } else {
+            holder.deletePersonInfo.setVisibility(View.INVISIBLE);
+        }
+
     }
 
 
@@ -75,6 +113,8 @@ public class PersonInfoAdapter extends RecyclerView.Adapter<PersonInfoAdapter.Vi
         TextView personName;
         TextView personAge;
         TextView personGender;
+        ImageButton deletePersonInfo;
+
 
         public ViewHolder(@NonNull View itemView) {
             super(itemView);
@@ -82,6 +122,7 @@ public class PersonInfoAdapter extends RecyclerView.Adapter<PersonInfoAdapter.Vi
             personName = itemView.findViewById(R.id.person_name);
             personAge = itemView.findViewById(R.id.person_age);
             personGender = itemView.findViewById(R.id.person_gender);
+            deletePersonInfo = itemView.findViewById(R.id.delete_person_info);
         }
     }
 }

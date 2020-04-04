@@ -17,7 +17,6 @@ package com.videogo.ui.realplay;
 
 import android.annotation.SuppressLint;
 import android.app.Application;
-import android.app.Person;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -27,7 +26,6 @@ import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.graphics.Camera;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -35,7 +33,6 @@ import android.graphics.Rect;
 import android.graphics.drawable.AnimationDrawable;
 import android.graphics.drawable.BitmapDrawable;
 import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
@@ -43,14 +40,11 @@ import android.os.Message;
 import android.os.SystemClock;
 import android.provider.MediaStore;
 import android.text.TextUtils;
-import android.util.Base64;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
-import android.view.MenuInflater;
-import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -67,6 +61,7 @@ import android.view.animation.Animation.AnimationListener;
 import android.view.animation.TranslateAnimation;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageButton;
 import android.widget.ImageView;
@@ -79,7 +74,6 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
-import androidx.appcompat.widget.PopupMenu;
 import androidx.core.view.GravityCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -101,8 +95,9 @@ import com.arcsoft.imageutil.ArcSoftImageUtilError;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import com.videogo.EzvizApplication;
-import com.videogo.PersonInfo;
-import com.videogo.PersonInfoAdapter;
+import com.videogo.facedetection.GetPersonNameAlertDialog;
+import com.videogo.facedetection.PersonInfo;
+import com.videogo.facedetection.PersonInfoAdapter;
 import com.videogo.RootActivity;
 import com.videogo.constant.Config;
 import com.videogo.constant.Constant;
@@ -122,7 +117,6 @@ import com.videogo.openapi.bean.EZCameraInfo;
 import com.videogo.openapi.bean.EZDeviceInfo;
 import com.videogo.openapi.bean.EZVideoQualityInfo;
 import com.videogo.realplay.RealPlayStatus;
-import com.videogo.scan.main.Contents;
 import com.videogo.ui.cameralist.EZCameraListActivity;
 import com.videogo.ui.common.ScreenOrientationHelper;
 import com.videogo.ui.util.ActivityUtils;
@@ -151,15 +145,10 @@ import org.opencv.android.OpenCVLoader;
 
 import org.opencv.objdetect.CascadeClassifier;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -233,6 +222,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
     private RelativeLayout mRealPlayLoadingRl;
     private TextView mRealPlayTipTv;
     private ImageView mRealPlayPlayIv;
+    private ImageView imageView;
     private ImageView faceRect;
     private LoadingTextView mRealPlayPlayLoading;
     private LinearLayout mRealPlayPlayPrivacyLy;
@@ -367,10 +357,15 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
 
     private ArrayList<PersonInfo> registeredPersonList = new ArrayList<>();
     private FaceEngine faceEngine = new FaceEngine();
-    private ImageView imageView;
+    private ImageView faceRegListNull;
     private DrawerLayout drawerLayout;
     private RecyclerView recyclerView;
     private LinearLayout linearLayout;
+    private boolean isRegListUpdate = false;
+    PersonInfoAdapter personInfoAdapter;
+
+    private ImageButton faceRegEdit;
+    private boolean isEdit;
 
     private int succeedReg;
     private int mRealFlow = 0;
@@ -714,11 +709,14 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
         faceRect = findViewById(R.id.face_rect);
         findViewById(R.id.reg_person).setOnClickListener(this);
         recyclerView = findViewById(R.id.realplay_page_rv);
+        faceRegListNull = findViewById(R.id.face_reg_list_null);
         LinearLayoutManager manager = new LinearLayoutManager(this);
         recyclerView.setLayoutManager(manager);
 
 
 
+        faceRegEdit = findViewById(R.id.realplay_page_face_reg);
+        faceRegEdit.setOnClickListener(this);
         mRealPlayPlayRl = (RelativeLayout) findViewById(R.id.realplay_play_rl);
         drawerLayout = findViewById(R.id.realplay_page_dl);
         linearLayout = findViewById(R.id.realplay_page_ll);
@@ -1432,6 +1430,9 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
                 }
 
                 break;
+            case R.id.realplay_page_face_reg:
+                faceRegListEdit();
+                break;
             case R.id.face_compare:
                 isFaceCompare = true;
                 break;
@@ -1440,12 +1441,24 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
                 break;
             case R.id.reg_person:
                 registeredPersonList = getPersonData();
+                if (registeredPersonList.size() == 0) {
+                    faceRegListNull.setVisibility(View.VISIBLE);
+                    faceRegEdit.setVisibility(View.INVISIBLE);
+                } else {
+                    faceRegEdit.setVisibility(View.VISIBLE);
+                    faceRegListNull.setVisibility(View.GONE);
+                    isEdit = false;
+                    faceRegEdit.setBackground(getResources().getDrawable(R.drawable.face_reg_edit, null));
+                }
                 for (PersonInfo personInfo : registeredPersonList) {
                     Log.d(TAG, "onClick: " + personInfo.getId() + personInfo.getAge() + personInfo.getGender());
                 }
-                PersonInfoAdapter personInfoAdapter = new PersonInfoAdapter(registeredPersonList);
+
+                personInfoAdapter = new PersonInfoAdapter(registeredPersonList, isEdit);
+
                 recyclerView.setAdapter(personInfoAdapter);
                 drawerLayout.openDrawer(GravityCompat.END);
+
                 break;
             case R.id.realplay_play_btn:
             case R.id.realplay_full_play_btn:
@@ -3849,57 +3862,78 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
             Log.d(TAG, "onClick: " + transformCode);
             return;
         }
+        int processMask = FaceEngine.ASF_AGE | FaceEngine.ASF_GENDER;
         List<FaceInfo> faceInfoList = new ArrayList<>();
+        List<AgeInfo> myAgeInfo = new ArrayList<>();
+        List<GenderInfo> myGenderInfo = new ArrayList<>();
         int errCode = faceEngine.detectFaces(bgr24, alignedBitmap.getWidth(), alignedBitmap.getHeight(), FaceEngine.CP_PAF_BGR24, faceInfoList);
+        int myErrCode1 = faceEngine.process(bgr24, alignedBitmap.getWidth(), alignedBitmap.getHeight(), FaceEngine.CP_PAF_BGR24, faceInfoList, processMask);
+        int myErrCode2 = faceEngine.getAge(myAgeInfo);
+        int myErrCode3 = faceEngine.getGender(myGenderInfo);
+
+
         Canvas canvas = new Canvas(bitmap);
         Paint paint = new Paint();
-        paint.setColor(Color.RED);
-        paint.setStrokeWidth(6);
-        paint.setStyle(Paint.Style.STROKE);
-        if (errCode == com.arcsoft.face.ErrorInfo.MOK && faceInfoList.size() > 0) {
-            Log.d(TAG, "onClick: " + "detect success! " + faceInfoList.size());
-            for (FaceInfo face : faceInfoList) {
-                canvas.drawRect((float)face.getRect().left / 1920 * dispWidth, (float)face.getRect().top / 1080 * dispHeight,
-                        (float)face.getRect().right / 1920 * dispWidth, (float)face.getRect().bottom / 1080 * dispHeight, paint);
-                Log.d(TAG, "onClick: 矩形坐标 " + face.getRect().left + " " + face.getRect().top + " " + face.getRect().right + " " + face.getRect().bottom);
+
+        paint.setAntiAlias(true);
+
+        if (errCode == com.arcsoft.face.ErrorInfo.MOK && myErrCode1 == com.arcsoft.face.ErrorInfo.MOK && myErrCode2 == com.arcsoft.face.ErrorInfo.MOK && myErrCode3 == com.arcsoft.face.ErrorInfo.MOK && faceInfoList.size() > 0) {
+
+            for (int i = 0; i < faceInfoList.size(); i++) {
+                Log.d(TAG, "onClick: " + "detect success! " + myAgeInfo.get(i).getAge());
+                paint.setStrokeWidth(6);
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setColor(Color.GREEN);
+                canvas.drawRect((float)faceInfoList.get(i).getRect().left / 1920 * dispWidth, (float)faceInfoList.get(i).getRect().top / 1080 * dispHeight,
+                        (float)faceInfoList.get(i).getRect().right / 1920 * dispWidth, (float)faceInfoList.get(i).getRect().bottom / 1080 * dispHeight, paint);
+               // Log.d(TAG, "onClick: 矩形坐标 " + face.getRect().left + " " + face.getRect().top + " " + face.getRect().right + " " + face.getRect().bottom);
+                String str = (myGenderInfo.get(i).getGender() == 0? "男" : myGenderInfo.get(i).getGender() == 1? "女" : "未知") + "，" + myAgeInfo.get(i).getAge();
+                paint.setStrokeWidth(1);
+                paint.setStyle(Paint.Style.FILL_AND_STROKE);
+                paint.setTextSize(faceInfoList.get(i).getRect().width() >> 3);
+                canvas.drawText(str, (float)faceInfoList.get(i).getRect().left / 1920 * dispWidth, (float)faceInfoList.get(i).getRect().top / 1080 * dispHeight - 13, paint);
                 if (isFaceCompare) {
-                    //faceCompare(bgr24, alignedBitmap.getWidth(), alignedBitmap.getHeight(), FaceEngine.CP_PAF_BGR24, faceInfoList);
+                    faceCompare(bgr24, alignedBitmap.getWidth(), alignedBitmap.getHeight(), faceInfoList);
                 }
             }
+
 
         } else {
             Log.d(TAG, "onClick: " + "detect failed! " + errCode);
         }
 
     }
-    //开启人脸对比
-    private void faceCompare(byte[] data, int width, int height, int format, List<FaceInfo> faceInfoList) {
-        Bitmap myFace = BitmapFactory.decodeFile(Environment.getExternalStorageDirectory().getAbsolutePath() + "/0_OpenSDK/Captures/1582294690650.jpg");
-        Bitmap alignedBitmap = ArcSoftImageUtil.getAlignedBitmap(myFace, true);
 
-        if (alignedBitmap == null) {
+    //开启人脸对比
+    private void faceCompare(byte[] data, int width, int height, List<FaceInfo> faceInfoList) {
+        if (faceInfoList.size() == 0) {
             return;
         }
-        byte[] bgr24 = ArcSoftImageUtil.createImageData(alignedBitmap.getWidth(), alignedBitmap.getHeight(), ArcSoftImageFormat.BGR24);
-        int transformCode = ArcSoftImageUtil.bitmapToImageData(alignedBitmap, bgr24, ArcSoftImageFormat.BGR24);
-        if (transformCode != ArcSoftImageUtilError.CODE_SUCCESS) {
-            Log.d(TAG, "onClick: " + transformCode);
-            return;
+
+        if (registeredPersonList.size() == 0) {
+            registeredPersonList = getPersonData();
+            if (registeredPersonList.size() == 0) {
+                return;
+            }
+        } else if (isRegListUpdate) {
+            registeredPersonList = getPersonData();
+            isRegListUpdate = false;
+            if (registeredPersonList.size() == 0) {
+                return;
+            }
         }
-        List<FaceInfo> myFaceInfo = new ArrayList<>();
-        faceEngine.detectFaces(bgr24, alignedBitmap.getWidth(), alignedBitmap.getHeight(), FaceEngine.CP_PAF_BGR24, myFaceInfo);
-        FaceFeature myFaceFeature = new FaceFeature();
-        int myErrCode = faceEngine.extractFaceFeature(bgr24, alignedBitmap.getWidth(), alignedBitmap.getHeight(), FaceEngine.CP_PAF_BGR24, myFaceInfo.get(0), myFaceFeature);
-        Log.d(TAG, "faceCompare:我的特征长度 " + myFaceInfo.size() + " " + myErrCode);
-        FaceFeature faceFeature = new FaceFeature();
-        FaceSimilar faceSimilar = new FaceSimilar();
-        for (FaceInfo faceInfo:
-        faceInfoList) {
-            int errCode = faceEngine.extractFaceFeature(data, width, height, format, faceInfo, faceFeature);
-            Log.d(TAG, "faceCompare:待检测的识别 " + errCode);
-            faceEngine.compareFaceFeature(myFaceFeature, faceFeature, faceSimilar);
-            Log.d(TAG, "faceCompare: " + faceSimilar.getScore());
-        }
+         for (int i = 0; i < faceInfoList.size(); i++) {
+             FaceFeature myFaceFeature = new FaceFeature();
+             int myErrCode = faceEngine.extractFaceFeature(data, width, height, FaceEngine.CP_PAF_BGR24, faceInfoList.get(i), myFaceFeature);
+             if (myErrCode != com.arcsoft.face.ErrorInfo.MOK) {
+                 continue;
+             }
+             for (int j = 0; j < registeredPersonList.size(); j++) {
+                 FaceSimilar faceSimilar = new FaceSimilar();
+                 faceEngine.compareFaceFeature(myFaceFeature, registeredPersonList.get(i).getFaceFeature(), faceSimilar);
+                 Log.d(TAG, "faceCompare: " + faceSimilar.getScore());
+             }
+         }
 
     }
 
@@ -3930,10 +3964,21 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
         int myErrCode2 = faceEngine.getAge(myAgeInfo);
         int myErrCode3 = faceEngine.getGender(myGenderInfo);
         for (FaceInfo faceInfo : myFaceInfo) {
+                if (faceInfo.getRect().bottom < 0) {
+                    faceInfo.getRect().bottom = 0;
+                } else if (faceInfo.getRect().right < 0) {
+                    faceInfo.getRect().right = 0;
+                } else if (faceInfo.getRect().top < 0) {
+                    faceInfo.getRect().top = 0;
+                } else if (faceInfo.getRect().left < 0) {
+                    faceInfo.getRect().left = 0;
+                }
+
             myBitmaps.add(ImageUtils.cropImage(bitmap, faceInfo.getRect()));
         }
         if (myBitmaps.size() != myFaceInfo.size()) {
             Log.d(TAG, "faceRegister: " + "获取裁剪后的图像失败3！");
+            return -1;
         }
 
 
@@ -4005,9 +4050,12 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
                 }
                 int faceNum2 = registeredPersonList.size();
                 if (faceNum2 > faceNum1) {
+                    savePersonData(registeredPersonList);
+                    isRegListUpdate = true;
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
+                            //人脸信息数据存储
                             Toast.makeText(EZRealPlayActivity.this, "注册成功！新增" + succeedReg + "个样本", Toast.LENGTH_SHORT).show();
                         }
                     });
@@ -4019,10 +4067,6 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
                         }
                     });
                 }
-
-                //人脸信息数据存储
-                savePersonData(registeredPersonList);
-
             }
         }).start();
     }
@@ -4041,6 +4085,8 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
+                                savePersonData(registeredPersonList);
+                                isRegListUpdate = true;
                                 Toast.makeText(EZRealPlayActivity.this, "注册成功！新增" + succeedReg + "个样本", Toast.LENGTH_SHORT).show();
                             }
                         });
@@ -4048,6 +4094,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
+
                                 Toast.makeText(EZRealPlayActivity.this, "注册失败，未检测到人脸或重复注册！", Toast.LENGTH_SHORT).show();
                             }
                         });
@@ -4061,7 +4108,6 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
                     });
 
                 }
-                savePersonData(registeredPersonList);
 
             }
         }).start();
@@ -4105,7 +4151,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
 
     }
 
-    private void deletePersonData(String id) {
+    public void deletePersonData(String id) {
         String filePath = Environment.getExternalStorageDirectory().getAbsolutePath() + "/0_OpenSDK/Portraits";
         File file = new File(filePath);
         File[] files = file.listFiles();
@@ -4118,7 +4164,14 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
                 mFile.delete();
             }
         }
-
+        if (registeredPersonList != null) {
+            for (int i = 0; i < registeredPersonList.size(); i++) {
+                if (registeredPersonList.get(i).getId().equals(id)) {
+                    registeredPersonList.remove(i);
+                    break;
+                }
+            }
+        }
         ArrayList<PersonInfo> arrayList = new ArrayList<>();
         if ((arrayList = getPersonData()) != null) {
             for (int i = 0; i < arrayList.size(); i++) {
@@ -4138,6 +4191,88 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
 
     }
 
+    //修改和设置用户名
+
+    private void setUserName(String id, String name) {
+        if (registeredPersonList != null) {
+            for (int i = 0; i < registeredPersonList.size(); i++) {
+                if (registeredPersonList.get(i).getId().equals(id)) {
+                    registeredPersonList.get(i).setName(name);
+                    break;
+                }
+            }
+        }
+        ArrayList<PersonInfo> arrayList = new ArrayList<>();
+        if ((arrayList = getPersonData()) != null) {
+            for (int i = 0; i < arrayList.size(); i++) {
+                if (arrayList.get(i).getId().equals(id)) {
+                    arrayList.get(i).setName(name);
+                    break;
+                }
+            }
+        }
+        savePersonData(arrayList);
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                Toast.makeText(EZRealPlayActivity.this, "修改成功！", Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    //已注册用户的信息删除和用户名修改
+    private void faceRegListEdit() {
+        isEdit = !isEdit;
+        if (isEdit) {
+            faceRegEdit.setBackground(getResources().getDrawable(R.drawable.face_reg_edit_cancel, null));
+        } else {
+            faceRegEdit.setBackground(getResources().getDrawable(R.drawable.face_reg_edit, null));
+        }
+        if (personInfoAdapter != null) {
+            personInfoAdapter = new PersonInfoAdapter(registeredPersonList, isEdit);
+            recyclerView.setAdapter(personInfoAdapter);
+            PersonInfoAdapter.OnItemClickListener listener = new PersonInfoAdapter.OnItemClickListener() {
+                @Override
+                public void onItemClick(View view, String id, int position, boolean isSetName) {
+                    if (isSetName) {
+
+                        GetPersonNameAlertDialog dialog = new GetPersonNameAlertDialog(EZRealPlayActivity.this, new GetPersonNameAlertDialog.OnEditInputFinishedListener() {
+                            @Override
+                            public void editInputFinished(String userName) {
+                                if (userName != null) {
+                                    setUserName(id, userName);
+                                    personInfoAdapter.notifyDataSetChanged();
+                                    isRegListUpdate = true;
+                                } else {
+                                    Toast.makeText(EZRealPlayActivity.this, "用户名不能为空", Toast.LENGTH_SHORT);
+                                }
+                            }
+                        });
+                        dialog.setView(new EditText(EZRealPlayActivity.this));
+                        dialog.show();
+
+                    } else {
+                        deletePersonData(id);
+                        if (registeredPersonList.size() == 0) {
+                            faceRegEdit.setVisibility(View.INVISIBLE);
+                            faceRegListNull.setVisibility(View.VISIBLE);
+                        }
+                        Log.d(TAG, "监听2: " + position + " " + registeredPersonList.size());
+
+                        personInfoAdapter.notifyItemRemoved(position);
+                        if (position != registeredPersonList.size()) {
+                            personInfoAdapter.notifyItemRangeChanged(position, registeredPersonList.size() - position);
+                            isRegListUpdate = true;
+                        }
+
+                    }
+                }
+            };
+            personInfoAdapter.setOnItemClickListener(listener);
+
+        }
+
+    }
 
     //首次使用虹软需要激活引擎
     private void activeEngine() {
