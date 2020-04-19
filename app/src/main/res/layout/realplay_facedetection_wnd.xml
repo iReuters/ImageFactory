@@ -19,31 +19,65 @@
             android:onClick="onClick" />
         <LinearLayout
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content">
-            <Button
+            android:layout_height="wrap_content"
+            android:id="@+id/realplay_facedetection_ll">
+            <Switch
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="人脸识别"
                 android:id="@+id/face_detect"/>
-            <Button
+            <Switch
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="人脸对比"
                 android:id="@+id/face_compare"/>
+            <Switch
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="陌生人报警"
+                android:id="@+id/face_alarm"/>
+        </LinearLayout>
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:id="@+id/skeleton_detect_ll"
+            android:layout_below="@+id/realplay_facedetection_ll"
+            android:orientation="horizontal">
+            <Switch
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="危险动作检测"
+                android:id="@+id/unsafe_acts"/>
+            <Switch
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="骨骼检测"
+                android:id="@+id/skeleton_detect1"/>
+            <Switch
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="危险动作报警"
+                android:id="@+id/unsafe_acts_alarm"/>
+
+        </LinearLayout>
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:id="@+id/reg_ll"
+            android:layout_below="@+id/skeleton_detect_ll">
             <Button
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:id="@+id/face_reg"
-                android:text="注册"/>
+                android:text="注册" />
+            <Button
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:id="@+id/skeleton_detect"
+                android:text="注册" />
         </LinearLayout>
+
     </RelativeLayout>
-    <ImageView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:id="@+id/iv1"/>
-    <Button
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="下一张"
-        android:id="@+id/next"/>
+
 </LinearLayout>

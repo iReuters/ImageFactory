@@ -28,7 +28,9 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Matrix;
 import android.graphics.Paint;
+import android.graphics.Point;
 import android.graphics.Rect;
 import android.graphics.drawable.AnimationDrawable;
 import android.graphics.drawable.BitmapDrawable;
@@ -39,6 +41,7 @@ import android.os.Handler;
 import android.os.Message;
 import android.os.SystemClock;
 import android.provider.MediaStore;
+import android.speech.tts.TextToSpeech;
 import android.text.TextUtils;
 import android.util.DisplayMetrics;
 import android.util.Log;
@@ -70,6 +73,7 @@ import android.widget.PopupWindow;
 import android.widget.PopupWindow.OnDismissListener;
 import android.widget.RelativeLayout;
 import android.widget.RelativeLayout.LayoutParams;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -92,6 +96,7 @@ import com.arcsoft.face.util.ImageUtils;
 import com.arcsoft.imageutil.ArcSoftImageFormat;
 import com.arcsoft.imageutil.ArcSoftImageUtil;
 import com.arcsoft.imageutil.ArcSoftImageUtilError;
+import com.baidu.aip.bodyanalysis.AipBodyAnalysis;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import com.videogo.EzvizApplication;
@@ -106,6 +111,7 @@ import com.videogo.errorlayer.ErrorInfo;
 import com.videogo.exception.BaseException;
 import com.videogo.exception.ErrorCode;
 import com.videogo.exception.InnerException;
+import com.videogo.facedetection.UnRegisteredPersonInfo;
 import com.videogo.openapi.EZConstants;
 import com.videogo.openapi.EZConstants.EZPTZAction;
 import com.videogo.openapi.EZConstants.EZPTZCommand;
@@ -141,10 +147,10 @@ import com.videogo.widget.loading.LoadingTextView;
 
 
 import org.MediaPlayer.PlayM4.Player;
-import org.opencv.android.OpenCVLoader;
+import org.json.JSONException;
+import org.json.JSONObject;
 
-import org.opencv.objdetect.CascadeClassifier;
-
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
@@ -152,8 +158,13 @@ import java.io.IOException;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.UUID;
@@ -162,13 +173,17 @@ import ezviz.ezopensdk.debug.VideoFileUtil;
 import ezviz.ezopensdk.demo.DemoConfig;
 import ezviz.ezopensdk.R;
 import io.github.lijunguan.imgselector.ImageSelector;
+import openpose.Classifier;
+import openpose.Common;
+import openpose.TensorFlowPoseDetector;
+import openpose.env.Logger;
 
 
 import static com.videogo.openapi.EZConstants.MSG_GOT_STREAM_TYPE;
 import static com.videogo.openapi.EZConstants.MSG_VIDEO_SIZE_CHANGED;
 
 public class EZRealPlayActivity extends RootActivity implements OnClickListener, SurfaceHolder.Callback,
-        Handler.Callback, OnTouchListener, VerifyCodeInput.VerifyCodeInputListener  {
+        Handler.Callback, OnTouchListener, VerifyCodeInput.VerifyCodeInputListener, TextToSpeech.OnInitListener {
     private static final String TAG = EZRealPlayActivity.class.getSimpleName();
 
     private static final int ANIMATION_DURING_TIME = 500;
@@ -191,6 +206,14 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
     public static final int MSG_SET_VEDIOMODE_SUCCESS = 105;
 
     public static final int MSG_SET_VEDIOMODE_FAIL = 106;
+
+    private static final Logger LOGGER = new Logger();
+
+    private static final int MP_INPUT_SIZE = 368;
+    private static final String MP_INPUT_NAME = "image";
+    private static final String MP_OUTPUT_L1 = "Openpose/MConv_Stage6_L1_5_pointwise/BatchNorm/FusedBatchNorm";
+    private static final String MP_OUTPUT_L2 = "Openpose/MConv_Stage6_L2_5_pointwise/BatchNorm/FusedBatchNorm";
+    private static final String MP_MODEL_FILE = "file:///android_asset/frozen_person_model.pb";
 
     private String mRtspUrl = null;
     private RealPlaySquareInfo mRealPlaySquareInfo = null;
@@ -226,7 +249,6 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
     private ImageView faceRect;
     private LoadingTextView mRealPlayPlayLoading;
     private LinearLayout mRealPlayPlayPrivacyLy;
-    private CascadeClassifier faceDetector;
     private ImageView mPageAnimIv = null;
     private AnimationDrawable mPageAnimDrawable = null;
 
@@ -305,8 +327,16 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
     private PopupWindow mTalkPopupWindow = null;
     private RingView mTalkRingView = null;
     private Button mTalkBackControlBtn = null;
-
-
+    private Switch faceDetect;
+    private Switch faceCompare;
+    private Switch faceAlarm;
+    private Switch unsafeActs;
+    private Switch skeletonDetect1;
+    private Switch unsafeActsAlarm;
+    private boolean faceDetectState = false;
+    private boolean isDetectUnsafeActs = false;
+    private boolean isDetectSkeleton = false;
+    private boolean isUnsafeActsAlarmOpen = false;
     private WaitDialog mWaitDialog = null;
 
     private RealPlayBroadcastReceiver mBroadcastReceiver = null;
@@ -354,6 +384,8 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
     private MyThread thrd;
     private MyThread facedetect;
     private boolean isFaceCompare = false;
+    private Canvas canvas;
+    private Paint paint;
 
     private ArrayList<PersonInfo> registeredPersonList = new ArrayList<>();
     private FaceEngine faceEngine = new FaceEngine();
@@ -366,15 +398,21 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
 
     private ImageButton faceRegEdit;
     private boolean isEdit;
+    private List<UnRegisteredPersonInfo> unRegisteredPersonInfoList = new ArrayList<>();
+    private boolean isOpenAlarm = false;
+    private TextToSpeech mTTS;
+    private Classifier detector;
+
 
     private int succeedReg;
     private int mRealFlow = 0;
+
+    private Button skeletonDetect;
 
     //    private GoogleApiClient client;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        iniLoadOpenCV();
         activeEngine();
         View decorView = getWindow().getDecorView();
         decorView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
@@ -396,15 +434,17 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
     protected void onPause() {
         super.onPause();
         Log.d(TAG, "onPause: ");
-        if (thrd != null && facedetect != null){
-            thrd.exit = true;
-            facedetect.exit = true;
+        stopFaceDetect();
+        if (mTTS != null) {
+            mTTS.stop();
+            mTTS.shutdown();
         }
-
     }
 
     @Override
     protected void onResume() {
+
+
         super.onResume();
 
         if (mOrientation == Configuration.ORIENTATION_LANDSCAPE) {
@@ -448,6 +488,10 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
     @Override
     protected void onStop() {
         super.onStop();
+        if (mTTS != null) {
+            mTTS.stop();
+            mTTS.shutdown();
+        }
         if (mScreenOrientationHelper != null) {
             mScreenOrientationHelper.postOnStop();
         }
@@ -482,20 +526,11 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
     protected void onDestroy() {
         super.onDestroy();
         registeredPersonList = null;
-        File file = new File(path);
-        File[] files = file.listFiles();
-        if (thrd != null && facedetect != null){
-            thrd.exit = true;
-            Log.d(TAG, "onDestroy: " + "停止截图");
-            facedetect.exit = true;
+        stopFaceDetect();
+        if (mTTS != null) {
+            mTTS.stop();
+            mTTS.shutdown();
         }
-        for (File file1 : files) {
-            if (file1.isFile()) {
-                file1.delete();
-            }
-        }
-
-
         if (mEZPlayer != null) {
             mEZPlayer.release();
         }
@@ -580,6 +615,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
             mCameraInfo = intent.getParcelableExtra(IntentConsts.EXTRA_CAMERA_INFO);
             mDeviceInfo = intent.getParcelableExtra(IntentConsts.EXTRA_DEVICE_INFO);
             mRtspUrl = intent.getStringExtra(IntentConsts.EXTRA_RTSP_URL);
+            Log.d(TAG, "initData: " + mRtspUrl);
             if (mCameraInfo != null) {
                 mCurrentQulityMode = (mCameraInfo.getVideoLevel());
             }
@@ -635,6 +671,20 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
             }
             switchButton.setText(getResources().getString(R.string.switch_to_speaker));
             isHandset = true;
+        }
+    }
+
+    @Override
+    public void onInit(int status) {
+        if (status == TextToSpeech.SUCCESS) {
+            int result = mTTS.setLanguage(Locale.CHINA);
+            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                Log.d(TAG, "onInit: 初始化失败");
+            }
+        }
+        if (mTTS != null) {
+            mTTS.setPitch(1.0f);
+            mTTS.setSpeechRate(0.7f);
         }
     }
 
@@ -1402,63 +1452,158 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
     @Override
     public void onClick(View view) {
         switch (view.getId()) {
-            case R.id.next:
-                if (registeredPersonList.size() != 0) {
+            case R.id.skeleton_detect:
+                String mPath = Environment.getExternalStorageDirectory().getAbsolutePath() + "/skeleton.jpeg";
+                AipBodyAnalysis client = new AipBodyAnalysis("19386573", "05yklmuUy8KM9GCu54CeoN8w", "VpY30LarrdxlnsqtaOzo3XDmh0DVG99D");
+                client.setConnectionTimeoutInMillis(2000);
+                client.setSocketTimeoutInMillis(60000);
+                HashMap<String, String> options = new HashMap<String, String>();
 
-                    for (int i= 0; i < registeredPersonList.size(); i++) {
-                        Log.d(TAG, "onActivityResult: " + "id: " + registeredPersonList.get(i).getId() + " age: " + registeredPersonList.get(i).getAge() + " " + " gender: " + registeredPersonList.get(i).getGender()
-                                + " bitmapList: " + registeredPersonList.size());
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        JSONObject res= client.bodyAnalysis(mPath, options);
+                        try {
+                            Log.d(TAG, "onClick: " + res.toString(2));
+                        } catch (JSONException e) {
+                            e.printStackTrace();
+                        }
                     }
+                }).start();
 
-                    //imageView.setImageBitmap(registeredPersonList.get(num).getPortrait());
-                    if (num == registeredPersonList.size() - 1) {
-                        num = 0;
-                    } else {
-                        num += 1;
-                    }
-                }
                 break;
             case R.id.face_detect:
-                Toast.makeText(this, "开始识别", Toast.LENGTH_SHORT).show();
-
-                try {
-                    faceDetectCapture();
-                    Thread.sleep(200);
-                    drawFaceRect(faceRect, dispWidth, dispHeight);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
+                faceDetectState = !faceDetectState;
+                if (faceDetectState) {
+                    faceCompare.setVisibility(View.VISIBLE);
+                    faceDetect.setChecked(true);
+                    Toast.makeText(this, "开始识别", Toast.LENGTH_SHORT).show();
+                    try {
+                        faceDetectCapture();
+                        Thread.sleep(200);
+                        drawFaceRect(faceRect, dispWidth, dispHeight);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                } else {
+                    faceCompare.setVisibility(View.GONE);
+                    faceAlarm.setVisibility(View.GONE);
+                    faceDetect.setChecked(false);
+                    isFaceCompare = false;
+                    isOpenAlarm = false;
+                    stopFaceDetect();
+                    bitmap = Bitmap.createBitmap(dispWidth, dispHeight, Bitmap.Config.ARGB_8888);
+                    faceRect.setImageBitmap(bitmap);
                 }
 
                 break;
-            case R.id.realplay_page_face_reg:
-                faceRegListEdit();
-                break;
             case R.id.face_compare:
-                isFaceCompare = true;
+                isFaceCompare = !isFaceCompare;
+                if (isFaceCompare) {
+                    faceCompare.setChecked(true);
+                    faceAlarm.setVisibility(View.VISIBLE);
+                    if (isOpenAlarm) {
+                        faceAlarm.setChecked(true);
+                    } else {
+                        faceAlarm.setChecked(false);
+                    }
+                } else {
+                    faceCompare.setChecked(false);
+                    faceAlarm.setVisibility(View.GONE);
+                    isOpenAlarm = false;
+                }
+                break;
+            case R.id.face_alarm:
+                isOpenAlarm = !isOpenAlarm;
+                mTTS = new TextToSpeech(getApplicationContext(), this);
+                if (isOpenAlarm) {
+                    faceAlarm.setChecked(true);
+                } else {
+                    unRegisteredPersonInfoList.clear();
+                    faceAlarm.setChecked(false);
+                    if (mTTS != null){
+                        mTTS.stop();
+                        mTTS.shutdown();
+                    }
+
+                }
+                break;
+            case R.id.realplay_page_face_reg:
+                if (isFaceCompare) {
+                    Toast.makeText(this, "开启人脸对比时无法使用此功能", Toast.LENGTH_SHORT).show();
+                } else {
+                    faceRegListEdit();
+                }
+
                 break;
             case R.id.face_reg:
                 openFaceRegPopupWindow();
                 break;
             case R.id.reg_person:
                 registeredPersonList = getPersonData();
-                if (registeredPersonList.size() == 0) {
+                if (registeredPersonList == null || registeredPersonList.size() == 0) {
                     faceRegListNull.setVisibility(View.VISIBLE);
                     faceRegEdit.setVisibility(View.INVISIBLE);
+                    drawerLayout.openDrawer(GravityCompat.END);
+                    return;
                 } else {
                     faceRegEdit.setVisibility(View.VISIBLE);
                     faceRegListNull.setVisibility(View.GONE);
                     isEdit = false;
                     faceRegEdit.setBackground(getResources().getDrawable(R.drawable.face_reg_edit, null));
+                    for (PersonInfo personInfo : registeredPersonList) {
+                        Log.d(TAG, "onClick: " + personInfo.getId() + personInfo.getAge() + personInfo.getGender());
+                    }
+
+                    personInfoAdapter = new PersonInfoAdapter(registeredPersonList, isEdit);
+
+                    recyclerView.setAdapter(personInfoAdapter);
+                    drawerLayout.openDrawer(GravityCompat.END);
                 }
-                for (PersonInfo personInfo : registeredPersonList) {
-                    Log.d(TAG, "onClick: " + personInfo.getId() + personInfo.getAge() + personInfo.getGender());
+                break;
+            case R.id.unsafe_acts:
+                isDetectUnsafeActs = !isDetectUnsafeActs;
+                if (isDetectUnsafeActs) {
+                    faceDetectState = false;
+                    isFaceCompare = false;
+                    isOpenAlarm = false;
+                    faceDetect.setChecked(false);
+                    faceAlarm.setVisibility(View.GONE);
+                    faceCompare.setVisibility(View.GONE);
+                    if (mTTS != null) {
+                        mTTS = null;
+                    }
+                    skeletonDetect1.setVisibility(View.VISIBLE);
+                    // Configure the detector
+                    detector = TensorFlowPoseDetector.create(
+                            getAssets(),
+                            MP_MODEL_FILE,
+                            MP_INPUT_SIZE,
+                            MP_INPUT_NAME,
+                            new String[]{MP_OUTPUT_L1, MP_OUTPUT_L2}
+                    );
+                    try {
+                        faceDetectCapture();
+                        Thread.sleep(200);
+                        drawFaceRect(faceRect, dispWidth, dispHeight);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+
+                } else {
+                    skeletonDetect1.setVisibility(View.GONE);
+                    unsafeActsAlarm.setVisibility(View.GONE);
+                    unsafeActs.setChecked(false);
+                    isDetectSkeleton = false;
+                    isUnsafeActsAlarmOpen= false;
+                    //
+                    bitmap = Bitmap.createBitmap(dispWidth, dispHeight, Bitmap.Config.ARGB_8888);
+                    faceRect.setImageBitmap(bitmap);
                 }
-
-                personInfoAdapter = new PersonInfoAdapter(registeredPersonList, isEdit);
-
-                recyclerView.setAdapter(personInfoAdapter);
-                drawerLayout.openDrawer(GravityCompat.END);
-
+                break;
+            case R.id.skeleton_detect1:
+                break;
+            case R.id.unsafe_acts_alarm:
                 break;
             case R.id.realplay_play_btn:
             case R.id.realplay_full_play_btn:
@@ -1990,27 +2135,102 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
 
     private void openFaceDetectionPopupWindow(View parent) {
         closeFaceDetectionPopupWindow();
+
         View layoutView = View.inflate(this, R.layout.realplay_facedetection_wnd, null);
-        imageView = layoutView.findViewById(R.id.iv1);
-        layoutView.findViewById(R.id.face_detect).setOnClickListener(this);
-        layoutView.findViewById(R.id.face_compare).setOnClickListener(this);
-        layoutView.findViewById(R.id.face_reg).setOnClickListener(this);
-        layoutView.findViewById(R.id.next).setOnClickListener(this);
-        layoutView.findViewById(R.id.face_close_btn).setOnClickListener(this);
-        int height = mLocalInfo.getScreenHeight() - mPortraitTitleBar.getHeight() - mRealPlayPlayRl.getHeight()
-                - (mRealPlayRect != null ? mRealPlayRect.top : mLocalInfo.getNavigationBarHeight());
-        mFaceDetectionWindow = new PopupWindow(layoutView, LayoutParams.MATCH_PARENT, height, true);
-        mFaceDetectionWindow.setAnimationStyle(R.style.popwindowUpAnim);
-        mFaceDetectionWindow.setOutsideTouchable(true);
-        mFaceDetectionWindow.showAsDropDown(parent);
-        mFaceDetectionWindow.setOnDismissListener(new OnDismissListener() {
-            @Override
-            public void onDismiss() {
-                mFaceDetectionWindow = null;
-                closeFaceDetectionPopupWindow();
+        if (faceDetect == null || faceCompare == null || faceAlarm == null) {
+            faceDetect = layoutView.findViewById(R.id.face_detect);
+            faceDetect.setOnClickListener(this);
+            faceCompare = layoutView.findViewById(R.id.face_compare);
+            faceCompare.setOnClickListener(this);
+            faceAlarm = layoutView.findViewById(R.id.face_alarm);
+            faceAlarm.setOnClickListener(this);
+            if (!faceDetectState) {
+                faceCompare.setVisibility(View.GONE);
+                faceAlarm.setVisibility(View.GONE);
             }
-        });
-        mFaceDetectionWindow.update();
+        } else {
+            faceDetect = layoutView.findViewById(R.id.face_detect);
+            faceDetect.setOnClickListener(this);
+            faceCompare = layoutView.findViewById(R.id.face_compare);
+            faceCompare.setOnClickListener(this);
+            faceAlarm = layoutView.findViewById(R.id.face_alarm);
+            faceAlarm.setOnClickListener(this);
+            if (faceDetectState) {
+                faceDetect.setChecked(true);
+                faceCompare.setVisibility(View.VISIBLE);
+                if (isFaceCompare) {
+                    faceCompare.setChecked(true);
+                    if (isOpenAlarm) {
+                        faceAlarm.setChecked(true);
+                    } else {
+                        faceAlarm.setChecked(false);
+                    }
+                } else {
+                    faceCompare.setChecked(false);
+                }
+            } else {
+                faceDetect.setChecked(false);
+                faceCompare.setVisibility(View.GONE);
+                faceAlarm.setVisibility(View.GONE);
+            }
+        }
+
+        if (unsafeActs == null || skeletonDetect1 == null || unsafeActsAlarm == null) {
+            unsafeActs = layoutView.findViewById(R.id.unsafe_acts);
+            unsafeActs.setOnClickListener(this);
+            skeletonDetect1 = layoutView.findViewById(R.id.skeleton_detect1);
+            skeletonDetect1.setOnClickListener(this);
+            unsafeActsAlarm = layoutView.findViewById(R.id.unsafe_acts_alarm);
+            unsafeActsAlarm.setOnClickListener(this);
+            if (!isDetectUnsafeActs){
+                skeletonDetect1.setVisibility(View.GONE);
+                unsafeActsAlarm.setVisibility(View.GONE);
+            }
+        }else {
+            unsafeActs = layoutView.findViewById(R.id.unsafe_acts);
+            unsafeActs.setOnClickListener(this);
+            skeletonDetect1 = layoutView.findViewById(R.id.skeleton_detect1);
+            skeletonDetect1.setOnClickListener(this);
+            unsafeActsAlarm = layoutView.findViewById(R.id.unsafe_acts_alarm);
+            unsafeActsAlarm.setOnClickListener(this);
+            if (isDetectUnsafeActs) {
+                skeletonDetect1.setVisibility(View.VISIBLE);
+                unsafeActs.setChecked(true);
+                if (isDetectSkeleton) {
+                    unsafeActsAlarm.setVisibility(View.VISIBLE);
+                    skeletonDetect1.setChecked(true);
+                    if (isUnsafeActsAlarmOpen) {
+                        unsafeActsAlarm.setChecked(true);
+                    } else {
+                        unsafeActsAlarm.setChecked(false);
+                    }
+                } else {
+                    skeletonDetect1.setChecked(false);
+                }
+            }else {
+                unsafeActs.setChecked(false);
+                skeletonDetect1.setVisibility(View.GONE);
+                unsafeActsAlarm.setVisibility(View.GONE);
+            }
+        }
+        layoutView.findViewById(R.id.face_reg).setOnClickListener(this);
+        layoutView.findViewById(R.id.face_close_btn).setOnClickListener(this);
+        layoutView.findViewById(R.id.skeleton_detect).setOnClickListener(this);
+            int height = mLocalInfo.getScreenHeight() - mPortraitTitleBar.getHeight() - mRealPlayPlayRl.getHeight()
+                    - (mRealPlayRect != null ? mRealPlayRect.top : mLocalInfo.getNavigationBarHeight());
+            mFaceDetectionWindow = new PopupWindow(layoutView, LayoutParams.MATCH_PARENT, height, true);
+            mFaceDetectionWindow.setAnimationStyle(R.style.popwindowUpAnim);
+            mFaceDetectionWindow.setOutsideTouchable(true);
+            mFaceDetectionWindow.showAsDropDown(parent);
+            mFaceDetectionWindow.setOnDismissListener(new OnDismissListener() {
+                @Override
+                public void onDismiss() {
+                    mFaceDetectionWindow = null;
+                    closeFaceDetectionPopupWindow();
+                }
+            });
+            mFaceDetectionWindow.update();
+
     }
 
     private void closeFaceDetectionPopupWindow() {
@@ -2704,6 +2924,42 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
                 }
                 showDecodeType();
                 handlePlaySuccess(msg);
+                if (faceDetectState) {
+                    faceCompare.setVisibility(View.VISIBLE);
+                    faceDetect.setChecked(true);
+                    if (isFaceCompare) {
+                        faceCompare.setChecked(true);
+                        faceAlarm.setVisibility(View.VISIBLE);
+                        if (isOpenAlarm) {
+                            faceAlarm.setChecked(true);
+                        }
+                    }
+                    try {
+                        faceDetectCapture();
+                        Thread.sleep(200);
+                        drawFaceRect(faceRect, dispWidth, dispHeight);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+                if (isDetectUnsafeActs) {
+                    skeletonDetect1.setVisibility(View.VISIBLE);
+                    unsafeActs.setChecked(true);
+                    if (isDetectSkeleton) {
+                        skeletonDetect1.setChecked(true);
+                        unsafeActsAlarm.setVisibility(View.VISIBLE);
+                        if (isUnsafeActsAlarmOpen) {
+                            unsafeActsAlarm.setChecked(true);
+                        }
+                    }
+                    /*try {
+                        faceDetectCapture();
+                        Thread.sleep(200);
+                        drawFaceRect(faceRect, dispWidth, dispHeight);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }*/
+                }
                 break;
             case EZRealPlayConstants.MSG_REALPLAY_PLAY_FAIL:
                 handlePlayFail(msg.obj);
@@ -3748,17 +4004,6 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
     }
 
 
-    private void iniLoadOpenCV(){
-        boolean success = OpenCVLoader.initDebug();
-        String CV_TAG = "OpenCV:";
-        if (success){
-            Log.i(CV_TAG,"OpenCV Libraries loaded...");
-            //Toast.makeText(this,"OpenCV initial success",Toast.LENGTH_SHORT).show();
-        }
-        else {
-            Toast.makeText(this,"WARNING: Could not load OpenCV libraries!",Toast.LENGTH_SHORT).show();
-        }
-    }
 
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
@@ -3818,8 +4063,11 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
                             Log.d(TAG, "run: " + "文件大小为0");
                             continue;
                         }
-
-                        faceDetect(file.getAbsolutePath());
+                        if (faceDetectState) {
+                            faceDetect(file.getAbsolutePath());
+                        } else if (isDetectUnsafeActs) {
+                            tensorflowPoseDetect(file.getAbsolutePath());
+                        }
 
                         runOnUiThread(new Runnable() {
                             @Override
@@ -3848,6 +4096,35 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
            facedetect.start();
 
     }
+    //动作识别
+    private void tensorflowPoseDetect(String filePath) {
+        Log.d(TAG, "tensorflowPoseDetect: ");
+        Bitmap bitmap1 = BitmapFactory.decodeFile(filePath);
+        bitmap1 = getNewBitmap(bitmap1, MP_INPUT_SIZE, MP_INPUT_SIZE);
+        long start = SystemClock.uptimeMillis();
+        List<Classifier.Recognition> mResults = detector.recognizeImage(bitmap1);
+        long end = SystemClock.uptimeMillis() - start;
+        LOGGER.i("处理时间: " + end + "毫秒");
+        bitmap = Bitmap.createBitmap(dispWidth, dispHeight, Bitmap.Config.ARGB_8888);
+        Canvas canvas1 = new Canvas(bitmap);
+
+        draw_humans(canvas1, mResults.get(0).humans);
+
+        /*for (TensorFlowPoseDetector.Human human : mResults.get(0).humans) {
+            int cp = Common.CocoPart.values().length;
+            Set<Integer> part_idxs = human.parts.keySet();
+            for (Common.CocoPart i : Common.CocoPart.values()) {
+                //if i not in part_idxs:
+                if (!part_idxs.contains(i.index)) {
+                    LOGGER.w("COORD %s, NULL, NULL", i.toString());
+                    continue;
+                }
+                TensorFlowPoseDetector.Coord part_coord = human.parts.get(i.index);
+                Log.d("sadsa", "my time: " + (part_coord.x * bitmap.getWidth() + 0.5f) + " " + (part_coord.y * bitmap.getHeight() + 0.5f));
+
+            }
+        }*/
+    }
 
     //开始识别并绘制矩形框
     private void faceDetect(String filePath) {
@@ -3872,30 +4149,16 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
         int myErrCode3 = faceEngine.getGender(myGenderInfo);
 
 
-        Canvas canvas = new Canvas(bitmap);
-        Paint paint = new Paint();
-
+        canvas = new Canvas(bitmap);
+        paint = new Paint();
         paint.setAntiAlias(true);
 
         if (errCode == com.arcsoft.face.ErrorInfo.MOK && myErrCode1 == com.arcsoft.face.ErrorInfo.MOK && myErrCode2 == com.arcsoft.face.ErrorInfo.MOK && myErrCode3 == com.arcsoft.face.ErrorInfo.MOK && faceInfoList.size() > 0) {
-
-            for (int i = 0; i < faceInfoList.size(); i++) {
-                Log.d(TAG, "onClick: " + "detect success! " + myAgeInfo.get(i).getAge());
-                paint.setStrokeWidth(6);
-                paint.setStyle(Paint.Style.STROKE);
-                paint.setColor(Color.GREEN);
-                canvas.drawRect((float)faceInfoList.get(i).getRect().left / 1920 * dispWidth, (float)faceInfoList.get(i).getRect().top / 1080 * dispHeight,
-                        (float)faceInfoList.get(i).getRect().right / 1920 * dispWidth, (float)faceInfoList.get(i).getRect().bottom / 1080 * dispHeight, paint);
-               // Log.d(TAG, "onClick: 矩形坐标 " + face.getRect().left + " " + face.getRect().top + " " + face.getRect().right + " " + face.getRect().bottom);
-                String str = (myGenderInfo.get(i).getGender() == 0? "男" : myGenderInfo.get(i).getGender() == 1? "女" : "未知") + "，" + myAgeInfo.get(i).getAge();
-                paint.setStrokeWidth(1);
-                paint.setStyle(Paint.Style.FILL_AND_STROKE);
-                paint.setTextSize(faceInfoList.get(i).getRect().width() >> 3);
-                canvas.drawText(str, (float)faceInfoList.get(i).getRect().left / 1920 * dispWidth, (float)faceInfoList.get(i).getRect().top / 1080 * dispHeight - 13, paint);
                 if (isFaceCompare) {
-                    faceCompare(bgr24, alignedBitmap.getWidth(), alignedBitmap.getHeight(), faceInfoList);
+                    faceCompare(bgr24, alignedBitmap.getWidth(), alignedBitmap.getHeight(), faceInfoList, myAgeInfo, myGenderInfo);
+                } else {
+                    drawFaceRect(canvas, paint, faceInfoList, myAgeInfo, myGenderInfo);
                 }
-            }
 
 
         } else {
@@ -3904,17 +4167,17 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
 
     }
 
-    //开启人脸对比
-    private void faceCompare(byte[] data, int width, int height, List<FaceInfo> faceInfoList) {
+    //开启人脸对比和矩形绘制
+    private void faceCompare(byte[] data, int width, int height, List<FaceInfo> faceInfoList, List<AgeInfo> ageInfoList, List<GenderInfo> genderInfoList) {
         if (faceInfoList.size() == 0) {
             return;
         }
 
         if (registeredPersonList.size() == 0) {
             registeredPersonList = getPersonData();
-            if (registeredPersonList.size() == 0) {
+            /*if (registeredPersonList.size() == 0) {
                 return;
-            }
+            }*/
         } else if (isRegListUpdate) {
             registeredPersonList = getPersonData();
             isRegListUpdate = false;
@@ -3922,19 +4185,136 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
                 return;
             }
         }
+
          for (int i = 0; i < faceInfoList.size(); i++) {
              FaceFeature myFaceFeature = new FaceFeature();
+             boolean isDetected = false;
              int myErrCode = faceEngine.extractFaceFeature(data, width, height, FaceEngine.CP_PAF_BGR24, faceInfoList.get(i), myFaceFeature);
              if (myErrCode != com.arcsoft.face.ErrorInfo.MOK) {
                  continue;
              }
+             if (registeredPersonList.size() == 0) {
+                 drawFaceRect1(canvas, paint, null, faceInfoList.get(i), ageInfoList.get(i), genderInfoList.get(i), false);
+                 continue;
+             }
+
              for (int j = 0; j < registeredPersonList.size(); j++) {
                  FaceSimilar faceSimilar = new FaceSimilar();
-                 faceEngine.compareFaceFeature(myFaceFeature, registeredPersonList.get(i).getFaceFeature(), faceSimilar);
-                 Log.d(TAG, "faceCompare: " + faceSimilar.getScore());
+                 faceEngine.compareFaceFeature(myFaceFeature, registeredPersonList.get(j).getFaceFeature(), faceSimilar);
+                 //Log.d(TAG, "faceCompare: " + faceSimilar.getScore());
+                 isDetected = faceSimilar.getScore() >= 0.8;
+                 if (isDetected) {
+                    drawFaceRect1(canvas, paint, registeredPersonList.get(j).getName(), faceInfoList.get(i), ageInfoList.get(i), genderInfoList.get(i), isDetected);
+                        if (isOpenAlarm && unRegisteredPersonInfoList.size() != 0) {
+                            for (int k = 0; k < unRegisteredPersonInfoList.size(); k++){
+                                FaceSimilar faceSimilar1 = new FaceSimilar();
+                                faceEngine.compareFaceFeature(myFaceFeature, unRegisteredPersonInfoList.get(k).getFaceFeature(), faceSimilar1);
+                                if (faceSimilar1.getScore() >= 0.8) {
+                                    unRegisteredPersonInfoList.get(k).count = 0;
+                                    unRegisteredPersonInfoList.get(k).noOperationCount = 0;
+                                    break;
+                                }
+                            }
+                        }
+                     break;
+                 }
              }
-         }
+             if (!isDetected) {
+                 drawFaceRect1(canvas, paint, null, faceInfoList.get(i), ageInfoList.get(i), genderInfoList.get(i), isDetected);
+                 if (isOpenAlarm) {
+                     if (unRegisteredPersonInfoList.size() != 0) {
+                         boolean isEverDetected = false;
+                         for (int k = 0; k < unRegisteredPersonInfoList.size(); k++){
+                             FaceSimilar faceSimilar = new FaceSimilar();
+                             faceEngine.compareFaceFeature(myFaceFeature, unRegisteredPersonInfoList.get(k).getFaceFeature(), faceSimilar);
+                             if (faceSimilar.getScore() >= 0.8) {
+                                 unRegisteredPersonInfoList.get(k).count++;
+                                 unRegisteredPersonInfoList.get(k).isModified = true;
+                                 unRegisteredPersonInfoList.get(k).noOperationCount = 0;
+                                 isEverDetected = true;
+                                 break;
+                             }
+                         }
+                         if (!isEverDetected) {
+                             UnRegisteredPersonInfo personInfo = new UnRegisteredPersonInfo();
+                             personInfo.setFaceFeature(myFaceFeature);
+                             unRegisteredPersonInfoList.add(personInfo);
+                         }
 
+                     } else {
+                         UnRegisteredPersonInfo personInfo = new UnRegisteredPersonInfo();
+                         personInfo.setFaceFeature(myFaceFeature);
+                         unRegisteredPersonInfoList.add(personInfo);
+                     }
+                 }
+
+             }
+
+         }
+         //标记未操作的数据，达到一定次数从列表中删除，并检测可疑用户数量
+        if (isOpenAlarm && unRegisteredPersonInfoList.size() > 0) {
+            int unRegisteredPersonNum = 0;
+            int index = 0;
+            Iterator<UnRegisteredPersonInfo> iterator = unRegisteredPersonInfoList.iterator();
+            while (iterator.hasNext()) {
+                if (index == unRegisteredPersonInfoList.size())
+                {   //防止下标越界
+                    break;
+                }
+                Log.d(TAG, "faceCompare: " + index);
+                UnRegisteredPersonInfo info = iterator.next();
+                if (unRegisteredPersonInfoList.get(index).count >= 7) {
+                    unRegisteredPersonNum++;
+                }
+                if (unRegisteredPersonInfoList.get(index).isModified) {
+                    unRegisteredPersonInfoList.get(index).isModified = false;
+                } else {
+                    unRegisteredPersonInfoList.get(index).noOperationCount++;
+                }
+                if (unRegisteredPersonInfoList.get(index).noOperationCount >= 4) {
+                    iterator.remove();
+                }
+                index++;
+            }
+            if (unRegisteredPersonNum != 0) {
+                if (mTTS != null && !mTTS.isSpeaking()) {
+                    mTTS.speak("检测到" + unRegisteredPersonNum + "个可疑人员！", TextToSpeech.QUEUE_FLUSH, null, "" + unRegisteredPersonNum);
+                }
+
+            }
+
+        }
+
+    }
+
+    private void drawFaceRect(Canvas canvas, Paint paint, List<FaceInfo> faceInfoList, List<AgeInfo> ageInfoList, List<GenderInfo> genderInfoList) {
+        for (int i = 0; i < faceInfoList.size(); i++) {
+            paint.setStrokeWidth(6);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setColor(Color.GREEN);
+            canvas.drawRect((float) faceInfoList.get(i).getRect().left / 1920 * dispWidth, (float) faceInfoList.get(i).getRect().top / 1080 * dispHeight,
+                    (float) faceInfoList.get(i).getRect().right / 1920 * dispWidth, (float) faceInfoList.get(i).getRect().bottom / 1080 * dispHeight, paint);
+            // Log.d(TAG, "onClick: 矩形坐标 " + face.getRect().left + " " + face.getRect().top + " " + face.getRect().right + " " + face.getRect().bottom);
+            String str = (genderInfoList.get(i).getGender() == 0 ? "男" : genderInfoList.get(i).getGender() == 1 ? "女" : "未知") + "，" + ageInfoList.get(i).getAge();
+            paint.setStrokeWidth(1);
+            paint.setStyle(Paint.Style.FILL_AND_STROKE);
+            paint.setTextSize(faceInfoList.get(i).getRect().width() >> 3);
+            canvas.drawText(str, (float) faceInfoList.get(i).getRect().left / 1920 * dispWidth, (float) faceInfoList.get(i).getRect().top / 1080 * dispHeight - 13, paint);
+        }
+    }
+
+    private void drawFaceRect1(Canvas canvas, Paint paint, String name, FaceInfo faceInfo, AgeInfo ageInfo, GenderInfo genderInfo, boolean isDetected) {
+        paint.setStrokeWidth(6);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setColor(isDetected? Color.GREEN : Color.RED);
+        canvas.drawRect((float) faceInfo.getRect().left / 1920 * dispWidth, (float) faceInfo.getRect().top / 1080 * dispHeight,
+                (float) faceInfo.getRect().right / 1920 * dispWidth, (float) faceInfo.getRect().bottom / 1080 * dispHeight, paint);
+        // Log.d(TAG, "onClick: 矩形坐标 " + face.getRect().left + " " + face.getRect().top + " " + face.getRect().right + " " + face.getRect().bottom);
+        String str = (isDetected? (name == null? "未命名" : name) : "未注册") + "，" + (genderInfo.getGender() == 0 ? "男" : genderInfo.getGender() == 1 ? "女" : "未知") + "，" + ageInfo.getAge();
+        paint.setStrokeWidth(1);
+        paint.setStyle(Paint.Style.FILL_AND_STROKE);
+        paint.setTextSize(faceInfo.getRect().width() >> 3);
+        canvas.drawText(str, (float) faceInfo.getRect().left / 1920 * dispWidth, (float) faceInfo.getRect().top / 1080 * dispHeight - 13, paint);
     }
 
     private int faceRegister(Bitmap bitmap) {
@@ -4019,7 +4399,6 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
                         personInfo.setAge(myAgeInfo.get(i).getAge());
                         personInfo.setFaceInfo(myFaceInfo.get(i));
                         personInfo.setFaceFeature(faceFeature);
-                        //personInfo.setPortrait(myBitmaps.get(i));
                         registeredPersonList.add(personInfo);
                         savePersonPortrait(myBitmaps.get(i), fileName);
                         succeedReg += 1;
@@ -4286,11 +4665,107 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
         }
     }
 
+    public Bitmap getNewBitmap(Bitmap bitmap, int newWidth ,int newHeight){
+        // 获得图片的宽高.
+        int width = bitmap.getWidth();
+        int height = bitmap.getHeight();
+        // 计算缩放比例.
+        float scaleWidth = ((float) newWidth) / width;
+        float scaleHeight = ((float) newHeight) / height;
+        // 取得想要缩放的matrix参数.
+        Matrix matrix = new Matrix();
+        matrix.postScale(scaleWidth, scaleHeight);
+        // 得到新的图片.
+        Bitmap newBitmap = Bitmap.createBitmap(bitmap, 0, 0, width, height, matrix, true);
+        return newBitmap;
+    }
+    private Integer HUMAN_RADIUS = 3;
+    //描出人体骨骼
+    private void draw_humans(Canvas canvas, List<TensorFlowPoseDetector.Human> human_list) {
+        //def draw_humans(img, human_list):
+        // image_h, image_w = img_copied.shape[:2]
+        int cp = Common.CocoPart.values().length;
+        int image_w = canvas.getWidth();
+        int image_h = canvas.getHeight();
+
+        //    for human in human_list:
+        for (TensorFlowPoseDetector.Human human : human_list) {
+            Point[] centers = new Point[cp];
+            //part_idxs = human.keys()
+            Set<Integer> part_idxs = human.parts.keySet();
+
+            LOGGER.i("COORD =====================================");
+            //# draw point
+            //for i in range(CocoPart.Background.value):
+            for (Common.CocoPart i : Common.CocoPart.values()) {
+                //if i not in part_idxs:
+                if (!part_idxs.contains(i.index)) {
+                    LOGGER.w("COORD %s, NULL, NULL", i.toString());
+                    continue;
+                }
+                //part_coord = human[i][1]
+                TensorFlowPoseDetector.Coord part_coord = human.parts.get(i.index);
+                //center = (int(part_coord[0] * image_w + 0.5), int(part_coord[1] * image_h + 0.5))
+                Point center = new Point((int) (part_coord.x * image_w + 0.5f), (int) (part_coord.y * image_h + 0.5f));
+                //centers[i] = center
+                centers[i.index] = center;
+
+                //cv2.circle(img_copied, center, 3, CocoColors[i], thickness=3, lineType=8, shift=0)
+                Paint paint = new Paint();
+                paint.setColor(Color.rgb(Common.CocoColors[i.index][0], Common.CocoColors[i.index][1], Common.CocoColors[i.index][2]));
+                paint.setStyle(Paint.Style.FILL);
+                canvas.drawCircle(center.x, center.y, HUMAN_RADIUS, paint);
+
+                LOGGER.i("COORD %s, %f, %f", i.toString(), part_coord.x, part_coord.y);
+            }
+
+            //# draw line
+            //for pair_order, pair in enumerate(CocoPairsRender):
+            for (int pair_order = 0; pair_order < Common.CocoPairsRender.length; pair_order++) {
+                int[] pair = Common.CocoPairsRender[pair_order];
+                //if pair[0] not in part_idxs or pair[1] not in part_idxs:
+                if (!part_idxs.contains(pair[0]) || !part_idxs.contains(pair[1])) {
+                    continue;
+                }
+
+                //img_copied = cv2.line(img_copied, centers[pair[0]], centers[pair[1]], CocoColors[pair_order], 3)
+                Paint paint = new Paint();
+                paint.setColor(Color.rgb(Common.CocoColors[pair_order][0], Common.CocoColors[pair_order][1], Common.CocoColors[pair_order][2]));
+                paint.setStrokeWidth(HUMAN_RADIUS);
+                paint.setStyle(Paint.Style.STROKE);
+
+                canvas.drawLine(centers[pair[0]].x, centers[pair[0]].y, centers[pair[1]].x, centers[pair[1]].y, paint);
+            }
+        }
+        //    return img_copied
+    }
+
     private void unInitEngine() {
         if (faceEngine != null) {
             int faceEngineCode = faceEngine.unInit();
             Log.i(TAG, "unInitEngine: " + faceEngineCode);
         }
+    }
+
+    private void stopFaceDetect() {
+        File file = new File(path);
+        File[] files = file.listFiles();
+        if (thrd != null && facedetect != null){
+            thrd.exit = true;
+            Log.d(TAG, "onDestroy: " + "停止截图");
+            facedetect.exit = true;
+        }
+        for (File file1 : files) {
+            if (file1.isFile()) {
+                file1.delete();
+            }
+        }
+    }
+
+    public static byte[] toByteArray(Bitmap bitmap) {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 80, baos);
+        return baos.toByteArray();
     }
 
     @Override

@@ -2,4 +2,3 @@ include ':app', ':ArcSoft'
 // demo公共资源
 include ':app-common'
 
-include ':OpenCV'
