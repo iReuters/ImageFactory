@@ -61,6 +61,7 @@ dependencies {
     implementation "com.lijunguan:imageseletor:1.0.2"
     implementation files('libs/fastjson-1.2.31.jar')
     implementation fileTree(dir: 'aar', include: ['*.aar', '*.jar'], exclude: [])
+    implementation fileTree(dir: 'aar', include: ['*.aar', '*.jar'], exclude: [])
 
 
 }

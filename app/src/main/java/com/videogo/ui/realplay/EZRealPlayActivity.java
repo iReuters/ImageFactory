@@ -1582,13 +1582,14 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
                             MP_INPUT_NAME,
                             new String[]{MP_OUTPUT_L1, MP_OUTPUT_L2}
                     );
-                    try {
+                    /*try {
                         faceDetectCapture();
                         Thread.sleep(200);
                         drawFaceRect(faceRect, dispWidth, dispHeight);
                     } catch (InterruptedException e) {
                         e.printStackTrace();
-                    }
+                    }*/
+                    skeletonDetect();
 
                 } else {
                     skeletonDetect1.setVisibility(View.GONE);
@@ -4002,7 +4003,67 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
             thrd.start();
         }
     }
+    private void skeletonDetect() {
 
+        mControlDisplaySec = 0;
+
+        if (mEZPlayer != null) {
+            mCaptureDisplaySec = 4;
+            updateCaptureUI();
+
+
+            thrd = new MyThread() {
+                @Override
+                public void run() {
+                    while (!thrd.exit) {
+                        Log.d(TAG, "run: " + "开始截图");
+
+                        Bitmap bmp = mEZPlayer.capturePicture();
+
+                        if (bmp != null) {
+                            try {
+
+                                drawSkeleton(bmp, faceRect, dispWidth, dispHeight);
+
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                            } finally {
+                                if (bmp != null) {
+                                    bmp.recycle();
+                                    bmp = null;
+
+                                }
+                            }
+                        } else {
+                            return;
+                        }
+                        super.run();
+                    }
+                }
+
+            };
+            thrd.start();
+        }
+    }
+
+    private void drawSkeleton(Bitmap bmp, final ImageView faceRect, int dispWidth, int dispHeight) {
+
+        bitmap = Bitmap.createBitmap(dispWidth, dispHeight, Bitmap.Config.ARGB_8888);
+
+
+        if (isDetectUnsafeActs) {
+            tensorflowPoseDetect(bmp);
+        }
+
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                faceRect.setImageBitmap(bitmap);
+            }
+        });
+
+
+    }
 
 
     @Override
@@ -4035,12 +4096,12 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
                     while (!facedetect.exit) {
                         bitmap = Bitmap.createBitmap(dispWidth, dispHeight, Bitmap.Config.ARGB_8888);
 
-                        runOnUiThread(new Runnable() {
+                        /*runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
                                 faceRect.setImageBitmap(bitmap);
                             }
-                        });
+                        });*/
                         Log.d(TAG, "run: " + "进去循环" + code);
                         if (!file.exists()) {
                             if (code > 5) {
@@ -4066,7 +4127,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
                         if (faceDetectState) {
                             faceDetect(file.getAbsolutePath());
                         } else if (isDetectUnsafeActs) {
-                            tensorflowPoseDetect(file.getAbsolutePath());
+                            //tensorflowPoseDetect(file.getAbsolutePath());
                         }
 
                         runOnUiThread(new Runnable() {
@@ -4097,9 +4158,9 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
 
     }
     //动作识别
-    private void tensorflowPoseDetect(String filePath) {
+    private void tensorflowPoseDetect(Bitmap bitmap1) {
         Log.d(TAG, "tensorflowPoseDetect: ");
-        Bitmap bitmap1 = BitmapFactory.decodeFile(filePath);
+        //Bitmap bitmap1 = BitmapFactory.decodeFile(filePath);
         bitmap1 = getNewBitmap(bitmap1, MP_INPUT_SIZE, MP_INPUT_SIZE);
         long start = SystemClock.uptimeMillis();
         List<Classifier.Recognition> mResults = detector.recognizeImage(bitmap1);
@@ -4679,7 +4740,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
         Bitmap newBitmap = Bitmap.createBitmap(bitmap, 0, 0, width, height, matrix, true);
         return newBitmap;
     }
-    private Integer HUMAN_RADIUS = 3;
+    private Integer HUMAN_RADIUS = 10;
     //描出人体骨骼
     private void draw_humans(Canvas canvas, List<TensorFlowPoseDetector.Human> human_list) {
         //def draw_humans(img, human_list):
@@ -4730,6 +4791,7 @@ public class EZRealPlayActivity extends RootActivity implements OnClickListener,
 
                 //img_copied = cv2.line(img_copied, centers[pair[0]], centers[pair[1]], CocoColors[pair_order], 3)
                 Paint paint = new Paint();
+                paint.setAntiAlias(true);
                 paint.setColor(Color.rgb(Common.CocoColors[pair_order][0], Common.CocoColors[pair_order][1], Common.CocoColors[pair_order][2]));
                 paint.setStrokeWidth(HUMAN_RADIUS);
                 paint.setStyle(Paint.Style.STROKE);
